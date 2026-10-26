@@ -1725,13 +1725,10 @@ func (app *workbench) deleteEtcdKeys() {
 }
 
 func (app *workbench) etcdDeleteTarget() string {
-	if app.etcdPrefix != "" {
+	if app.etcdDeletePrefix {
 		return app.etcdPrefix
 	}
-	if !app.etcdDeletePrefix {
-		return app.etcdSelectedKey
-	}
-	return ""
+	return app.etcdSelectedKey
 }
 
 func (app *workbench) startEtcdWatch() {

@@ -235,6 +235,33 @@ func TestEtcdWorkspaceShowsRevisionLeaseWatchAndDeleteSafety(t *testing.T) {
 	}
 }
 
+func TestEtcdDeleteTargetDefaultsToSelectedExactKey(t *testing.T) {
+	tests := []struct {
+		name       string
+		selected   string
+		browse     string
+		prefixMode bool
+		want       string
+	}{
+		{name: "selected key despite active browse prefix", selected: "/services/api", browse: "/services/", want: "/services/api"},
+		{name: "explicit prefix deletion", selected: "/services/api", browse: "/services/", prefixMode: true, want: "/services/"},
+		{name: "prefix deletion requires a nonempty prefix", selected: "/services/api", prefixMode: true, want: ""},
+		{name: "no selection", browse: "/services/", want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			app := &workbench{
+				etcdSelectedKey:  test.selected,
+				etcdPrefix:       test.browse,
+				etcdDeletePrefix: test.prefixMode,
+			}
+			if got := app.etcdDeleteTarget(); got != test.want {
+				t.Fatalf("etcdDeleteTarget() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestSQLRiskSummaryRequiresReviewForAmbiguousReadStatements(t *testing.T) {
 	tests := []struct {
 		statement string
