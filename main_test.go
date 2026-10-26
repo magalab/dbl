@@ -210,6 +210,9 @@ func TestEtcdWorkspaceShowsRevisionLeaseWatchAndDeleteSafety(t *testing.T) {
 	app.etcdValue = "https://api.internal"
 	app.etcdLeaseInfo = connection.EtcdLeaseInfo{TTL: 23, GrantedTTL: 60}
 	app.etcdWriteReady = true
+	app.etcdWriteConfirmation = etcdWriteConfirmation{
+		Key: "/services/api", Value: "https://api.internal",
+	}
 	app.etcdDeletePrefix = true
 	app.etcdDeleteReady = true
 	app.etcdDeleteTargetKey = "/services/"
@@ -222,7 +225,8 @@ func TestEtcdWorkspaceShowsRevisionLeaseWatchAndDeleteSafety(t *testing.T) {
 	for _, label := range []string{
 		"键或前缀", "按前缀匹配", "读取", "下一页", "etcd 键列表", "/services/api",
 		"创建修订 10 · 修改修订 42 · 版本 3 · Lease ID 7", "租约剩余 TTL 23 秒 · 授予 TTL 60 秒",
-		"Value", "Lease ID（可选）", "写入目标：/services/api；写入后将增加 revision。", "确认写入",
+		"Value", "Lease ID（可选）", "写入目标：/services/api；写入后将增加 revision。", "待写入值（20 字节）", "https://api.internal",
+		"写入后移除现有租约（Lease ID 7）", "确认写入",
 		"按前缀删除", "将删除 此前缀匹配的键 \"/services/\"，共 4 项。", "确认删除",
 		"起始 revision", "停止 Watch",
 	} {
@@ -232,6 +236,24 @@ func TestEtcdWorkspaceShowsRevisionLeaseWatchAndDeleteSafety(t *testing.T) {
 	}
 	if _, found := tester.Find("SQL 查询编辑器"); found {
 		t.Fatal("etcd workspace displayed the SQL editor")
+	}
+}
+
+func TestEtcdWorkspaceHidesWriteConfirmationAfterPayloadEdit(t *testing.T) {
+	app := newTestWorkbench()
+	app.etcdStore = &etcdadapter.Store{}
+	app.openedDriver = connection.DriverEtcd
+	app.etcdSelectedKey = "/services/api"
+	app.etcdSelected = connection.EtcdEntry{Key: "/services/api"}
+	app.etcdValue = "edited after preview"
+	app.etcdWriteReady = true
+	app.etcdWriteConfirmation = etcdWriteConfirmation{Key: "/services/api", Value: "reviewed value"}
+	tester := ui.NewTester(app.view, 1440, 900)
+	if !tester.HasText("待确认内容已变化，请重新预览写入。") {
+		t.Fatal("edited etcd payload did not require a fresh preview")
+	}
+	if tester.HasText("确认写入") {
+		t.Fatal("stale etcd write confirmation remained available after editing the payload")
 	}
 }
 
@@ -259,6 +281,98 @@ func TestEtcdDeleteTargetDefaultsToSelectedExactKey(t *testing.T) {
 				t.Fatalf("etcdDeleteTarget() = %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+func TestEtcdWriteConfirmationBindsTargetValueAndLease(t *testing.T) {
+	confirmation := etcdWriteConfirmation{Key: "/services/api", Value: "https://api.internal", LeaseID: "7"}
+	if !confirmation.matches("/services/api", "https://api.internal", "7") {
+		t.Fatal("confirmation did not match the reviewed payload")
+	}
+	for _, edited := range []etcdWriteConfirmation{
+		{Key: "/services/other", Value: "https://api.internal", LeaseID: "7"},
+		{Key: "/services/api", Value: "https://other.internal", LeaseID: "7"},
+		{Key: "/services/api", Value: "https://api.internal", LeaseID: "8"},
+	} {
+		if confirmation.matches(edited.Key, edited.Value, edited.LeaseID) {
+			t.Errorf("edited payload %#v still matched the preview", edited)
+		}
+	}
+}
+
+func TestPreviewEtcdWriteCapturesExactPayload(t *testing.T) {
+	app := &workbench{
+		etcdStore:       &etcdadapter.Store{},
+		etcdSelectedKey: "/services/api",
+		etcdValue:       "https://api.internal",
+		etcdLease:       " 7 ",
+	}
+	app.previewEtcdWrite()
+	want := etcdWriteConfirmation{Key: "/services/api", Value: "https://api.internal", LeaseID: "7"}
+	if !app.etcdWriteReady || app.etcdWriteConfirmation != want {
+		t.Fatalf("write preview = ready:%v payload:%#v, want ready:true payload:%#v", app.etcdWriteReady, app.etcdWriteConfirmation, want)
+	}
+}
+
+func TestPreviewEtcdWriteRejectsInvalidLeaseAndClearsOldApproval(t *testing.T) {
+	app := &workbench{
+		etcdStore:       &etcdadapter.Store{},
+		etcdSelectedKey: "/services/api",
+		etcdValue:       "https://api.internal",
+		etcdLease:       "-1",
+		etcdWriteReady:  true,
+		etcdWriteConfirmation: etcdWriteConfirmation{
+			Key: "/services/api", Value: "old value",
+		},
+	}
+	app.previewEtcdWrite()
+	if app.etcdWriteReady || app.etcdWriteConfirmation != (etcdWriteConfirmation{}) {
+		t.Fatal("invalid lease retained an earlier write approval")
+	}
+	if app.status != "etcd 写入失败" {
+		t.Fatalf("status = %q, want invalid lease error", app.status)
+	}
+}
+
+func TestEtcdCommitRejectsPayloadChangedAfterPreview(t *testing.T) {
+	app := &workbench{
+		etcdStore:       &etcdadapter.Store{},
+		etcdSelectedKey: "/services/api",
+		etcdValue:       "https://edited.internal",
+		etcdWriteReady:  true,
+		etcdWriteConfirmation: etcdWriteConfirmation{
+			Key: "/services/api", Value: "https://api.internal",
+		},
+	}
+	app.commitEtcdValue()
+	if app.busy {
+		t.Fatal("changed payload started an etcd write")
+	}
+	if app.etcdWriteReady || app.etcdWriteConfirmation != (etcdWriteConfirmation{}) {
+		t.Fatal("stale write confirmation was not cleared")
+	}
+	if app.status != "写入内容已更改，请重新预览并确认。" {
+		t.Fatalf("status = %q, want a re-preview prompt", app.status)
+	}
+}
+
+func TestParseEtcdLeaseID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int64
+		valid bool
+	}{
+		{input: "", want: 0, valid: true},
+		{input: " 0 ", want: 0, valid: true},
+		{input: "42", want: 42, valid: true},
+		{input: "-1"},
+		{input: "not-a-lease"},
+	}
+	for _, test := range tests {
+		got, err := parseEtcdLeaseID(test.input)
+		if (err == nil) != test.valid || (err == nil && got != test.want) {
+			t.Errorf("parseEtcdLeaseID(%q) = %d, %v; want %d valid=%v", test.input, got, err, test.want, test.valid)
+		}
 	}
 }
 

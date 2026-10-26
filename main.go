@@ -69,6 +69,16 @@ type aiPromptTemplate struct {
 	Prompt string
 }
 
+type etcdWriteConfirmation struct {
+	Key     string
+	Value   string
+	LeaseID string
+}
+
+func (confirmation etcdWriteConfirmation) matches(key, value, leaseID string) bool {
+	return confirmation.Key == key && confirmation.Value == value && confirmation.LeaseID == leaseID
+}
+
 type workbench struct {
 	window                  *mygo.Window
 	workspaces              []*queryWorkspace
@@ -97,6 +107,7 @@ type workbench struct {
 	etcdDeleteTargetKey     string
 	etcdDeleteTargetPrefix  bool
 	etcdWriteReady          bool
+	etcdWriteConfirmation   etcdWriteConfirmation
 	etcdWatchRevision       string
 	etcdWatchEvents         []connection.EtcdWatchEvent
 	etcdWatching            bool
@@ -1321,6 +1332,7 @@ func (app *workbench) checkConnection() {
 	app.etcdLeaseInfoLoading = false
 	app.etcdWatchEvents = nil
 	app.etcdDeleteReady, app.etcdWriteReady = false, false
+	app.etcdWriteConfirmation = etcdWriteConfirmation{}
 	app.busy = true
 	app.status = "正在检查数据库连接…"
 	manager := &app.connectionManager
@@ -1533,6 +1545,7 @@ func (app *workbench) openEtcd(profile preferences.ConnectionProfile) {
 			app.etcdLeaseInfo = connection.EtcdLeaseInfo{}
 			app.etcdLeaseInfoErr, app.etcdLeaseInfoLoading = "", false
 			app.etcdDeleteReady, app.etcdWriteReady = false, false
+			app.etcdWriteConfirmation = etcdWriteConfirmation{}
 			app.etcdList = ui.ListState{}
 			app.activeQuery.columns = nil
 			app.activeQuery.resultSQL, app.activeQuery.resultPath, app.activeQuery.resultConnectionID = "", "", ""
@@ -1579,6 +1592,7 @@ func (app *workbench) refreshEtcd(reset bool) {
 				app.etcdLeaseInfo = connection.EtcdLeaseInfo{}
 				app.etcdLeaseInfoErr, app.etcdLeaseInfoLoading = "", false
 				app.etcdWriteReady, app.etcdDeleteReady = false, false
+				app.etcdWriteConfirmation = etcdWriteConfirmation{}
 			} else {
 				app.etcdEntries = append(app.etcdEntries, page.Entries...)
 			}
@@ -1622,6 +1636,7 @@ func (app *workbench) selectEtcdKey(key string) {
 			app.etcdLeaseInfoLoading = false
 			app.etcdLease = ""
 			app.etcdWriteReady, app.etcdDeleteReady = false, false
+			app.etcdWriteConfirmation = etcdWriteConfirmation{}
 			app.status = "已加载 etcd 键详情。"
 		})
 	}()
@@ -1629,20 +1644,52 @@ func (app *workbench) selectEtcdKey(key string) {
 
 func (app *workbench) selectedEtcdEntry() connection.EtcdEntry { return app.etcdSelected }
 
+func parseEtcdLeaseID(value string) (int64, error) {
+	if strings.TrimSpace(value) == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || parsed < 0 {
+		return 0, errors.New("Lease ID 必须是非负整数")
+	}
+	return parsed, nil
+}
+
+func (app *workbench) previewEtcdWrite() {
+	if app.busy || app.etcdStore == nil || app.openedReadOnly || app.etcdSelectedKey == "" {
+		return
+	}
+	app.etcdWriteReady = false
+	app.etcdWriteConfirmation = etcdWriteConfirmation{}
+	if _, err := parseEtcdLeaseID(app.etcdLease); err != nil {
+		app.reportError("etcd 写入失败", err)
+		return
+	}
+	app.etcdWriteConfirmation = etcdWriteConfirmation{
+		Key: app.etcdSelectedKey, Value: app.etcdValue, LeaseID: strings.TrimSpace(app.etcdLease),
+	}
+	app.etcdWriteReady = true
+}
+
 func (app *workbench) commitEtcdValue() {
 	if app.busy || app.etcdStore == nil || app.openedReadOnly || app.etcdSelectedKey == "" || !app.etcdWriteReady {
 		return
 	}
-	lease := int64(0)
-	if strings.TrimSpace(app.etcdLease) != "" {
-		parsed, err := strconv.ParseInt(strings.TrimSpace(app.etcdLease), 10, 64)
-		if err != nil || parsed < 0 {
-			app.reportError("etcd 写入失败", errors.New("Lease ID 必须是非负整数"))
-			return
-		}
-		lease = parsed
+	confirmation := app.etcdWriteConfirmation
+	if !confirmation.matches(app.etcdSelectedKey, app.etcdValue, strings.TrimSpace(app.etcdLease)) {
+		app.etcdWriteReady = false
+		app.etcdWriteConfirmation = etcdWriteConfirmation{}
+		app.status = "写入内容已更改，请重新预览并确认。"
+		return
 	}
-	store, key, value := app.etcdStore, app.etcdSelectedKey, app.etcdValue
+	lease, err := parseEtcdLeaseID(confirmation.LeaseID)
+	if err != nil {
+		app.etcdWriteReady = false
+		app.etcdWriteConfirmation = etcdWriteConfirmation{}
+		app.reportError("etcd 写入失败", err)
+		return
+	}
+	store, key, value := app.etcdStore, confirmation.Key, confirmation.Value
 	app.busy = true
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -1659,6 +1706,8 @@ func (app *workbench) commitEtcdValue() {
 		}
 		app.window.Update(func() {
 			app.busy = false
+			app.etcdWriteReady = false
+			app.etcdWriteConfirmation = etcdWriteConfirmation{}
 			if err != nil {
 				app.reportError("写入 etcd 失败", err)
 				return
@@ -1666,7 +1715,6 @@ func (app *workbench) commitEtcdValue() {
 			app.etcdSelected, app.etcdValue = entry, entry.Value
 			app.etcdLeaseInfo, app.etcdLeaseInfoErr = leaseInfo, leaseErr
 			app.etcdLeaseInfoLoading = false
-			app.etcdWriteReady = false
 			app.status = fmt.Sprintf("etcd 写入成功，修改 revision %d。", entry.ModRevision)
 		})
 	}()
@@ -2999,14 +3047,29 @@ func (app *workbench) workspace(c *ui.Context) {
 							preview := ui.Button(c, "预览写入")
 							preview.Disabled(app.busy || app.dialogOpen)
 							if preview.Clicked() {
-								app.etcdWriteReady = true
+								app.previewEtcdWrite()
 							}
 							if app.etcdWriteReady {
-								ui.Text(c, "写入目标："+app.etcdSelectedKey+"；写入后将增加 revision。").TextColor(c.Theme().TextMuted)
-								commit := ui.PrimaryButton(c, "确认写入")
-								commit.Disabled(app.busy || app.dialogOpen)
-								if commit.Clicked() {
-									app.commitEtcdValue()
+								confirmation := app.etcdWriteConfirmation
+								if !confirmation.matches(app.etcdSelectedKey, app.etcdValue, strings.TrimSpace(app.etcdLease)) {
+									ui.Text(c, "待确认内容已变化，请重新预览写入。 ").TextColor(c.Theme().Warning)
+								} else {
+									ui.Text(c, "写入目标："+confirmation.Key+"；写入后将增加 revision。").TextColor(c.Theme().TextMuted)
+									ui.Text(c, fmt.Sprintf("待写入值（%d 字节）", len(confirmation.Value))).TextColor(c.Theme().TextMuted)
+									ui.Text(c, truncateText(confirmation.Value, 4096)).Selectable()
+									leaseID, _ := parseEtcdLeaseID(confirmation.LeaseID)
+									leaseLabel := "写入后不绑定租约"
+									if leaseID > 0 {
+										leaseLabel = fmt.Sprintf("写入后绑定 Lease ID：%d", leaseID)
+									} else if entry.Lease > 0 {
+										leaseLabel = fmt.Sprintf("写入后移除现有租约（Lease ID %d）", entry.Lease)
+									}
+									ui.Text(c, leaseLabel).TextColor(c.Theme().TextMuted)
+									commit := ui.PrimaryButton(c, "确认写入")
+									commit.Disabled(app.busy || app.dialogOpen)
+									if commit.Clicked() {
+										app.commitEtcdValue()
+									}
 								}
 							}
 							ui.Row(c).Gap(6).Children(func() {
