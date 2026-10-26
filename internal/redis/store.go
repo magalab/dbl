@@ -19,9 +19,11 @@ import (
 )
 
 const (
-	defaultPort    = 6379
-	maxPageSize    = 100
-	maxStringBytes = 1 << 20
+	defaultPort = 6379
+	maxPageSize = 100
+	// MaxValueBytes is the largest Redis value or field size accepted by the adapter.
+	MaxValueBytes  = 1 << 20
+	maxStringBytes = MaxValueBytes
 )
 
 type Connector struct {

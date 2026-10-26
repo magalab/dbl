@@ -2544,6 +2544,10 @@ func (app *workbench) confirmWriteRedisKey() {
 	if app.busy || app.keyStore == nil || app.redisSelectedKey == "" || app.openedReadOnly {
 		return
 	}
+	if len(app.redisValueDraft) > redisadapter.MaxValueBytes || len(app.redisEntryField) > redisadapter.MaxValueBytes {
+		app.reportError("写入 Redis 数据失败", errors.New("Redis 值和字段不能超过 1 MiB"))
+		return
+	}
 	ttlSeconds := int64(0)
 	if strings.TrimSpace(app.redisTTLSeconds) != "" {
 		parsed, err := strconv.ParseInt(strings.TrimSpace(app.redisTTLSeconds), 10, 64)
@@ -2617,7 +2621,7 @@ func redisMutationConfirmationDetail(mutation connection.KeyMutation) string {
 
 	detail := fmt.Sprintf("键：%s\n操作：%s\n类型：%s", mutation.Key, operation, mutation.Type)
 	if mutation.Field != "" {
-		detail += "\n字段：" + mutation.Field
+		detail += fmt.Sprintf("\n字段（%d 字节，转义预览最多 4 KiB）：\n%s", len(mutation.Field), truncateText(strconv.Quote(mutation.Field), 4096))
 	}
 	if mutation.Type == "zset" {
 		detail += fmt.Sprintf("\nScore：%g", mutation.Score)

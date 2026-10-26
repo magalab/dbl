@@ -10,6 +10,7 @@
 - 键浏览使用 Redis `SCAN` 游标与 `MATCH`，可选 `TYPE` 筛选，每页请求数量上限 100；不调用阻塞式 `KEYS`。前缀输入会追加 `*`，用户提供 glob 时直接传递。类型筛选需要 Redis 6.0+；该选项过滤每页返回内容，但完整迭代仍需扫描 keyspace。
 - 读取 string/hash/list/set/zset/stream。hash/set/zset 使用各自的游标扫描；list 使用有界 `LRANGE` offset；stream 使用反向 ID 游标，翻页时只读取下一页。单个展示值最多保留 1 MiB，string 用 `STRLEN` + `GETRANGE` 避免完整取回超长值。Hash/list/set/zset/stream 命令仍需接收 Redis 返回的整页后才能在客户端截断超长单项。
 - 首版写入支持 string、hash field、list append、set member、zset member/score、stream field；TTL 可设，集合写入在 TTL 留空或为 0 时保留已有 TTL，而 string 的 0 会移除已有 TTL 并改为永不过期。删除只支持单键。profile 的只读状态会阻止适配器写入；每次写入和删除都先在原生确认框展示环境、连接、目标 key 和操作影响。写入框包含转义后的值预览（最多 4 KiB）和字节数，并按类型说明覆盖/追加/成员更新及 TTL 结果。
+- Adapter 和 UI 共用 1 MiB 值/字段上限；超限输入在构造确认预览之前拒绝，字段/值均按有界转义文本显示。
 - 不对 Redis 原始值写日志；详情只有用户选中键后才读取，连接期间 SCAN 和详情读取均在异步任务内使用超时 context。
 
 ## 依据与验证

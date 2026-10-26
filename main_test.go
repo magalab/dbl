@@ -16,6 +16,7 @@ import (
 	"github.com/magalab/dbl/internal/credentials"
 	etcdadapter "github.com/magalab/dbl/internal/etcd"
 	"github.com/magalab/dbl/internal/preferences"
+	redisadapter "github.com/magalab/dbl/internal/redis"
 	"github.com/magalab/dbl/internal/sqlite"
 	"github.com/magalab/dbl/internal/sqlstream"
 )
@@ -968,7 +969,7 @@ func TestRedisMutationConfirmationDescribesExactOperationAndTTLImpact(t *testing
 		{
 			name:      "hash field update keeps expiry unless a new ttl is set",
 			mutation:  connection.KeyMutation{Key: "cache:hash", Type: "hash", Field: "owner", Value: "Ada"},
-			wantLines: []string{"操作：新增或更新 Hash 字段", "字段：owner", "TTL：写入后保留现有 TTL"},
+			wantLines: []string{"操作：新增或更新 Hash 字段", "字段（5 字节，转义预览最多 4 KiB）：", `"owner"`, "TTL：写入后保留现有 TTL"},
 		},
 		{
 			name:      "list append with ttl changes whole key expiry",
@@ -988,7 +989,7 @@ func TestRedisMutationConfirmationDescribesExactOperationAndTTLImpact(t *testing
 		{
 			name:      "stream appends a record",
 			mutation:  connection.KeyMutation{Key: "events", Type: "stream", Field: "kind", Value: "created"},
-			wantLines: []string{"操作：向 Stream 追加一条记录", "字段：kind"},
+			wantLines: []string{"操作：向 Stream 追加一条记录", `字段（4 字节，转义预览最多 4 KiB）：`, `"kind"`},
 		},
 	}
 	for _, test := range tests {
@@ -1023,6 +1024,33 @@ func TestRedisOperationConfirmationIncludesEnvironmentAndConnection(t *testing.T
 		if !strings.Contains(detail, want) {
 			t.Errorf("Redis confirmation detail is missing %q:\n%s", want, detail)
 		}
+	}
+}
+
+func TestRedisWriteRejectsOversizeInputsBeforeBuildingConfirmation(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		field string
+		value string
+	}{
+		{name: "value", value: strings.Repeat("x", redisadapter.MaxValueBytes+1)},
+		{name: "field", field: strings.Repeat("f", redisadapter.MaxValueBytes+1), value: "value"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			app := newTestWorkbench()
+			app.keyStore = testKeyValue{}
+			app.redisSelectedKey = "cache:item"
+			app.redisInfo.Type = "hash"
+			app.redisEntryField = test.field
+			app.redisValueDraft = test.value
+			app.confirmWriteRedisKey()
+			if app.dialogOpen {
+				t.Fatal("oversize Redis input opened the confirmation dialog")
+			}
+			if app.errorSummary != "写入 Redis 数据失败" {
+				t.Fatalf("error summary = %q, want oversize input rejection", app.errorSummary)
+			}
+		})
 	}
 }
 
