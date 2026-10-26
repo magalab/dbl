@@ -1,0 +1,16 @@
+{
+  "name": "DBL",
+  "identifier": "com.magalab.dbl",
+  "version": "0.1.0",
+  "copyright": "Copyright 2026 Magalab",
+  "icon": "resources/icon.png",
+  "main": ".",
+  "out": "build",
+  "macos": {
+    "minimumSystemVersion": "12.0"
+  },
+  "linux": {
+    "webview": false,
+    "categories": ["Development", "Database"]
+  }
+}
