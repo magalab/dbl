@@ -1,11 +1,11 @@
 # ADR 0004: 系统凭据库封装
 
-- 状态：进行中
-- 日期：2026-10-25
+- 状态：vault 实现完成；系统凭据库跨平台实测待完成
+- 日期：2026-10-26
 
 ## 决策
 
-- `internal/credentials` 定义可注入的 backend 和 `Vault` API；配置持久化层只应保存 `v1:` 格式的不透明引用，不应保存 secret。
+- `internal/credentials` 定义可注入的 backend 和 `Vault` API；配置持久化层只保存 `v1:`/`v2:` 不透明引用，不应保存 secret。应用不依赖引用版本，升级实现须保持既有引用可读。
 - 系统 backend 复用锁定版本 `github.com/egoist/mygo v0.6.2` 的默认 `mygo.Secrets` service，不再增加额外 keyring 依赖。MyGo 为 macOS Keychain、Windows Credential Manager 和 Linux Secret Service 提供统一 API；默认 service 按应用标识隔离，开发版和正式版使用不同空间。无可用系统凭据服务时调用失败，不回退到明文文件；不通过 `Secrets.Service` 覆盖默认隔离。
 - 单个系统密钥库条目遵循 MyGo 的 `MaxSecretSize`（2,560 字节）。不超过此值的 secret 继续使用 `v1:` 单项引用；较大 secret（总计最多 64 KiB）以 `v2:` 引用分块保存，每块均不超过系统条目限制，manifest 记录长度和 SHA-256 校验值。写入 manifest 前不会返回引用；读取时校验块长度和整体摘要；删除时先删块、最后删 manifest，以便失败后重试。空值、超出 64 KiB 的 secret 和格式错误引用在调用 backend 前拒绝。backend 错误对调用者统一折叠为通用错误，避免错误文本泄露 secret 或环境细节。
 - 删除不存在的引用视为成功。写入失败时尝试删除可能由 backend 部分创建的条目，防止留下不可达 secret；清理本身是尽力而为。
