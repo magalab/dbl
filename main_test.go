@@ -793,10 +793,11 @@ func TestInspectorCollapsesAtNarrowWindowWidth(t *testing.T) {
 
 func TestShutdownCancelsBackgroundTasksAndClosesActiveConnection(t *testing.T) {
 	app := newTestWorkbench()
+	app.lifecycleCtx, app.lifecycleCancel = context.WithCancel(context.Background())
 	makeTask := func() (context.Context, context.CancelFunc) {
 		return context.WithCancel(context.Background())
 	}
-	tasks := make([]context.Context, 0, 6)
+	tasks := make([]context.Context, 0, 7)
 	newCancel := func() context.CancelFunc {
 		ctx, cancel := makeTask()
 		tasks = append(tasks, ctx)
@@ -808,6 +809,9 @@ func TestShutdownCancelsBackgroundTasksAndClosesActiveConnection(t *testing.T) {
 	app.mongoCancel = newCancel()
 	app.etcdCancel = newCancel()
 	app.aiCancel = newCancel()
+	lifecycleTask, lifecycleTaskCancel := app.withTaskTimeout(time.Hour)
+	defer lifecycleTaskCancel()
+	tasks = append(tasks, lifecycleTask)
 	active, err := (mock.Connector{}).Connect(context.Background())
 	if err != nil {
 		t.Fatal(err)

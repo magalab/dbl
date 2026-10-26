@@ -81,6 +81,8 @@ func (confirmation etcdWriteConfirmation) matches(key, value, leaseID string) bo
 
 type workbench struct {
 	window                  *mygo.Window
+	lifecycleCtx            context.Context
+	lifecycleCancel         context.CancelFunc
 	workspaces              []*queryWorkspace
 	activeWorkspace         int
 	nextWorkspaceID         uint64
@@ -283,7 +285,10 @@ type queryWorkspace struct {
 
 func newWorkbench() *workbench {
 	workspace := newQueryWorkspace(1)
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	app := &workbench{
+		lifecycleCtx:    lifecycleCtx,
+		lifecycleCancel: lifecycleCancel,
 		workspaces:      []*queryWorkspace{workspace},
 		activeQuery:     workspace,
 		activeWorkspace: 0,
@@ -338,6 +343,21 @@ func newWorkbench() *workbench {
 	app.observedLayout = app.currentLayout()
 	app.savedLayout = app.observedLayout
 	return app
+}
+
+func (app *workbench) taskParentContext() context.Context {
+	if app.lifecycleCtx != nil {
+		return app.lifecycleCtx
+	}
+	return context.Background()
+}
+
+func (app *workbench) withTaskTimeout(timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(app.taskParentContext(), timeout)
+}
+
+func (app *workbench) withTaskCancel() (context.Context, context.CancelFunc) {
+	return context.WithCancel(app.taskParentContext())
 }
 
 func newQueryWorkspace(id uint64) *queryWorkspace {
@@ -1338,7 +1358,7 @@ func (app *workbench) checkConnection() {
 	manager := &app.connectionManager
 	store := app.store
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := app.withTaskTimeout(5 * time.Second)
 		defer cancel()
 		err := manager.HealthCheck(ctx)
 		app.window.Update(func() {
@@ -1375,7 +1395,7 @@ func (app *workbench) testSQLiteProfile(profile preferences.ConnectionProfile) {
 	app.busy = true
 	app.status = "正在测试 SQLite 连接配置…"
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := app.withTaskTimeout(10 * time.Second)
 		defer cancel()
 		adapter, err := (sqlite.Connector{Path: profile.Path, Access: access}).Connect(ctx)
 		if err == nil {
@@ -1411,7 +1431,7 @@ func (app *workbench) testRedisProfile(profile preferences.ConnectionProfile) {
 	app.busy = true
 	app.status = "正在测试 Redis 连接…"
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := app.withTaskTimeout(15 * time.Second)
 		defer cancel()
 		adapter, err := (redisadapter.Connector{Profile: profile, Vault: credentials.NewSystem()}).Connect(ctx)
 		if err == nil {
@@ -1439,7 +1459,7 @@ func (app *workbench) testMongoProfile(profile preferences.ConnectionProfile) {
 	app.busy = true
 	app.status = "正在测试 MongoDB 连接…"
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ctx, cancel := app.withTaskTimeout(20 * time.Second)
 		defer cancel()
 		adapter, err := (mongoadapter.Connector{Profile: profile, Vault: credentials.NewSystem()}).Connect(ctx)
 		if err == nil {
@@ -1467,7 +1487,7 @@ func (app *workbench) testEtcdProfile(profile preferences.ConnectionProfile) {
 	app.busy = true
 	app.status = "正在测试 etcd 连接…"
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ctx, cancel := app.withTaskTimeout(20 * time.Second)
 		defer cancel()
 		adapter, err := (etcdadapter.Connector{Profile: profile, Vault: credentials.NewSystem()}).Connect(ctx)
 		if err == nil {
@@ -1505,7 +1525,7 @@ func (app *workbench) openEtcd(profile preferences.ConnectionProfile) {
 	if app.etcdCancel != nil {
 		app.etcdCancel()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	ctx, cancel := app.withTaskTimeout(25 * time.Second)
 	go func() {
 		if oldCursor != nil {
 			_ = oldCursor.Close()
@@ -1577,7 +1597,7 @@ func (app *workbench) refreshEtcd(reset bool) {
 	app.busy = true
 	app.status = "正在读取 etcd 键…"
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ctx, cancel := app.withTaskTimeout(20 * time.Second)
 		defer cancel()
 		page, err := store.RangeKeys(ctx, prefix, usePrefix, start, 100)
 		app.window.Update(func() {
@@ -1612,7 +1632,7 @@ func (app *workbench) selectEtcdKey(key string) {
 	app.etcdLeaseInfoErr = ""
 	app.etcdLeaseInfoLoading = false
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := app.withTaskTimeout(15 * time.Second)
 		defer cancel()
 		entry, err := store.GetKey(ctx, key)
 		leaseInfo := connection.EtcdLeaseInfo{}
@@ -1692,7 +1712,7 @@ func (app *workbench) commitEtcdValue() {
 	store, key, value := app.etcdStore, confirmation.Key, confirmation.Value
 	app.busy = true
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ctx, cancel := app.withTaskTimeout(20 * time.Second)
 		defer cancel()
 		entry, err := store.PutKey(ctx, key, value, lease)
 		leaseInfo := connection.EtcdLeaseInfo{}
@@ -1729,7 +1749,7 @@ func (app *workbench) previewDeleteEtcd() {
 	store := app.etcdStore
 	app.busy = true
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := app.withTaskTimeout(15 * time.Second)
 		defer cancel()
 		count, err := store.CountKeys(ctx, key, prefix)
 		app.window.Update(func() {
@@ -1751,7 +1771,7 @@ func (app *workbench) deleteEtcdKeys() {
 	store, key, prefix := app.etcdStore, app.etcdDeleteTargetKey, app.etcdDeleteTargetPrefix
 	app.busy = true
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ctx, cancel := app.withTaskTimeout(20 * time.Second)
 		defer cancel()
 		count, err := store.DeleteKeys(ctx, key, prefix)
 		app.window.Update(func() {
@@ -1792,7 +1812,7 @@ func (app *workbench) startEtcdWatch() {
 		}
 		revision = parsed
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := app.withTaskCancel()
 	app.etcdCancel, app.etcdWatching = cancel, true
 	app.etcdWatchEvents = nil
 	key, prefix, store := app.etcdPrefix, app.etcdUsePrefix, app.etcdStore
@@ -1845,7 +1865,7 @@ func (app *workbench) openMongo(profile preferences.ConnectionProfile) {
 	if oldCancel != nil {
 		oldCancel()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	ctx, cancel := app.withTaskTimeout(25 * time.Second)
 	app.mongoCancel = cancel
 	go func() {
 		if oldCursor != nil {
@@ -1932,7 +1952,7 @@ func (app *workbench) selectMongoDatabase(database string) {
 	docs := app.documentStore
 	app.busy = true
 	app.status = "正在读取 MongoDB 集合…"
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := app.withTaskTimeout(15 * time.Second)
 	app.mongoCancel = cancel
 	go func() {
 		defer cancel()
@@ -1980,7 +2000,7 @@ func (app *workbench) selectMongoCollection(collection string) {
 	app.mongoSelectedID = ""
 	app.mongoEditor = nil
 	app.busy = true
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := app.withTaskTimeout(15 * time.Second)
 	app.mongoCancel = cancel
 	go func() {
 		defer cancel()
@@ -2019,7 +2039,7 @@ func (app *workbench) queryMongoDocuments(reset bool) {
 	}
 	app.busy = true
 	app.status = "正在读取 MongoDB 文档…"
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := app.withTaskTimeout(2 * time.Minute)
 	app.mongoCancel = cancel
 	go func() {
 		defer cancel()
@@ -2068,7 +2088,7 @@ func (app *workbench) inspectMongoDocument(id string) {
 	app.busy = true
 	app.mongoSelectedID = id
 	app.status = "正在读取 MongoDB 文档详情…"
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := app.withTaskTimeout(30 * time.Second)
 	app.mongoCancel = cancel
 	go func() {
 		defer cancel()
@@ -2221,7 +2241,7 @@ func (app *workbench) commitMongoDocument() {
 	go func() {
 		result, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: app.window, Type: mygo.MessageWarning, Title: "提交 MongoDB 文档", Message: "确认将此变更写入数据库？", Detail: fmt.Sprintf("连接：%s\n数据库：%s\n集合：%s\n文档 ID：%s\n\n%s", app.openedLabel, db, coll, id, change), Buttons: []string{"取消", "提交"}, DefaultButton: 0, CancelButton: 0})
 		if err == nil && result.Button == 1 {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := app.withTaskTimeout(30 * time.Second)
 			if isNew {
 				err = docs.InsertDocument(ctx, db, coll, body)
 			} else {
@@ -2304,7 +2324,7 @@ func (app *workbench) openRedis(profile preferences.ConnectionProfile) {
 	if oldCancel != nil {
 		oldCancel()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := app.withTaskTimeout(20 * time.Second)
 	app.cancelRedis = cancel
 	go func() {
 		if oldCursor != nil {
@@ -2383,7 +2403,7 @@ func (app *workbench) scanRedis(reset bool) {
 	keyType := redisTypeFilter(app.redisTypeFilter)
 	app.busy = true
 	app.status = "正在使用 SCAN 读取 Redis 键…"
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := app.withTaskTimeout(15 * time.Second)
 	app.cancelRedis = cancel
 	go func() {
 		defer cancel()
@@ -2420,7 +2440,7 @@ func (app *workbench) inspectRedisKey(key string) {
 	app.busy = true
 	app.redisSelectedKey = key
 	app.status = "正在读取 Redis 键…"
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := app.withTaskTimeout(15 * time.Second)
 	app.cancelRedis = cancel
 	go func() {
 		defer cancel()
@@ -2460,7 +2480,7 @@ func (app *workbench) readMoreRedisValue() {
 	}
 	keys, key, cursor := app.keyStore, app.redisSelectedKey, app.redisValueCursor
 	app.busy = true
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := app.withTaskTimeout(15 * time.Second)
 	app.cancelRedis = cancel
 	go func() {
 		defer cancel()
@@ -2495,7 +2515,7 @@ func (app *workbench) confirmDeleteRedisKey() {
 	go func() {
 		result, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: app.window, Type: mygo.MessageWarning, Title: "删除 Redis 键", Message: "确认删除这个 Redis 键？", Detail: key, Buttons: []string{"取消", "删除"}, DefaultButton: 0, CancelButton: 0})
 		if err == nil && result.Button == 1 {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := app.withTaskTimeout(10 * time.Second)
 			err = keys.DeleteKey(ctx, key)
 			cancel()
 		}
@@ -2544,7 +2564,7 @@ func (app *workbench) confirmWriteRedisKey() {
 	go func() {
 		result, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: app.window, Type: mygo.MessageWarning, Title: "写入 Redis 数据", Message: "确认写入该键？此操作会新增或更新指定元素。", Detail: fmt.Sprintf("键：%s\n类型：%s\n字段：%s\n值长度：%d 字节\nScore：%g\nTTL：%s", mutation.Key, mutation.Type, mutation.Field, len(mutation.Value), mutation.Score, redisTTLLabel(mutation.TTL)), Buttons: []string{"取消", "写入"}, DefaultButton: 0, CancelButton: 0})
 		if err == nil && result.Button == 1 {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := app.withTaskTimeout(10 * time.Second)
 			err = keys.WriteKey(ctx, mutation)
 			cancel()
 		}
@@ -2608,7 +2628,7 @@ func (app *workbench) testRemoteSQLProfile(profile preferences.ConnectionProfile
 	app.busy = true
 	app.status = "正在测试 " + label + " 连接配置…"
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ctx, cancel := app.withTaskTimeout(20 * time.Second)
 		defer cancel()
 		adapter, err := connector.Connect(ctx)
 		if err == nil {
@@ -3664,7 +3684,7 @@ func (app *workbench) sendPreparedAI() {
 	}
 	settings := app.aiPreparedSettings
 	messages := append([]assistant.Message(nil), app.aiPreparedMessages...)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := app.withTaskTimeout(2 * time.Minute)
 	app.aiCancel, app.aiRunning, app.aiPrepared = cancel, true, false
 	app.aiResponse = ""
 	app.status = "正在请求 AI…"
@@ -4114,7 +4134,7 @@ func (app *workbench) openSQLite(access sqlite.AccessMode) {
 		if oldCursor != nil {
 			_ = oldCursor.Close()
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := app.withTaskTimeout(10 * time.Second)
 		defer cancel()
 		var (
 			store      connection.SQL
@@ -4273,7 +4293,7 @@ func (app *workbench) openRemoteSQLProfile(profile preferences.ConnectionProfile
 		if oldCursor != nil {
 			_ = oldCursor.Close()
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ctx, cancel := app.withTaskTimeout(20 * time.Second)
 		defer cancel()
 		adapter, err := connector.Connect(ctx)
 		var store connection.SQL
@@ -4440,7 +4460,7 @@ func (app *workbench) loadMoreObjects() {
 	app.busy = true
 	app.status = "正在加载更多数据库对象…"
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := app.withTaskTimeout(5 * time.Second)
 		defer cancel()
 		page, err := store.Objects(ctx, afterSchema, afterType, afterName, sqliteObjectPageSize)
 		app.window.Update(func() {
@@ -4493,7 +4513,7 @@ func (app *workbench) inspectTableColumns(object connection.Object) {
 	app.busy = true
 	app.status = "正在读取表结构…"
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := app.withTaskTimeout(5 * time.Second)
 		defer cancel()
 		columns, err := store.Columns(ctx, object.Schema, object.Name)
 		app.window.Update(func() {
@@ -4636,7 +4656,7 @@ func (app *workbench) executeSQL() {
 	if oldCancel != nil {
 		oldCancel()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	ctx, cancel := app.withTaskTimeout(queryTimeout)
 	app.cancelQuery = cancel
 	app.queryContext = ctx
 	app.cursor = nil
@@ -5004,6 +5024,9 @@ func (app *workbench) setQueryHistoryEnabled(enabled bool) {
 }
 
 func (app *workbench) shutdown() {
+	if app.lifecycleCancel != nil {
+		app.lifecycleCancel()
+	}
 	for _, cancel := range []context.CancelFunc{
 		app.cancelQuery,
 		app.cancelExport,
@@ -5058,7 +5081,7 @@ func (app *workbench) exportResult(format sqlstream.ExportFormat) {
 		return
 	}
 	store := app.store
-	ctx, cancel := context.WithTimeout(context.Background(), exportTimeout)
+	ctx, cancel := app.withTaskTimeout(exportTimeout)
 	app.cancelExport = cancel
 	app.exporting = true
 	app.status = "正在只读重跑查询并导出完整结果…"
