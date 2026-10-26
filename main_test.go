@@ -1027,6 +1027,15 @@ func TestRedisOperationConfirmationIncludesEnvironmentAndConnection(t *testing.T
 	}
 }
 
+func TestMongoDocumentConfirmationIncludesEnvironmentAndTarget(t *testing.T) {
+	detail := mongoDocumentConfirmationDetail("生产", "Orders · mongo.example.test", "sales", "orders", "order-42", "+ 新文档\n{\"status\":\"paid\"}")
+	for _, want := range []string{"环境：生产", "连接：Orders · mongo.example.test", "数据库：sales", "集合：orders", "文档 ID：order-42", "+ 新文档", `{"status":"paid"}`} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("MongoDB confirmation detail is missing %q:\n%s", want, detail)
+		}
+	}
+}
+
 func TestRedisWriteRejectsOversizeInputsBeforeBuildingConfirmation(t *testing.T) {
 	for _, test := range []struct {
 		name  string

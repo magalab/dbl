@@ -8,7 +8,7 @@
 - 使用官方 `go.mongodb.org/mongo-driver/v2 v2.9.2`，实现独立的 `connection.Documents` capability。首版连接单 endpoint，TLS 默认 `verify-full` 使用系统根证书；支持追加 PEM 自定义 CA、用户名、密码 vault 引用和认证数据库。副本集拓扑、mTLS 与 SRV URI 暂不作为 profile 输入。
 - 文档和查询输入输出采用 MongoDB Extended JSON，保留 BSON ObjectID、日期、二进制和数值类型。find 和 aggregate 每次最多返回 100 条；文档编辑/插入最多 1 MiB，超长列表预览截断，完整详情单独读取。
 - 选择集合时按需读取只读索引元数据，显示索引名、key definition、unique、sparse 和 TTL 秒数；最多读取 500 个索引，超出时明确报错，不提供索引修改/删除操作。
-- 聚合 pipeline 禁止 `$out` 和 `$merge`，写入仅通过独立插入/替换 API。替换必须保留原 `_id`。UI 在提交前显示 diff 并要求显式确认；没有文档删除入口。
+- 聚合 pipeline 禁止 `$out` 和 `$merge`，写入仅通过独立插入/替换 API。替换必须保留原 `_id`。UI 在提交前显示 diff 并要求显式确认，确认框标出环境、连接、数据库、集合和文档 ID；没有文档删除入口。
 - profile 的只读状态由 adapter 层写入入口再次检查。连接、数据库枚举、查询、详情和写入均接受 context。
 
 ## 依据与限制

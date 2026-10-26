@@ -2238,8 +2238,9 @@ func (app *workbench) commitMongoDocument() {
 	}
 	app.dialogOpen = true
 	change := mongoDiffPreview(app.mongoOriginalJSON, body, isNew)
+	detail := mongoDocumentConfirmationDetail(environmentLabel(app.openedEnvironment), app.openedLabel, db, coll, id, change)
 	go func() {
-		result, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: app.window, Type: mygo.MessageWarning, Title: "提交 MongoDB 文档", Message: "确认将此变更写入数据库？", Detail: fmt.Sprintf("连接：%s\n数据库：%s\n集合：%s\n文档 ID：%s\n\n%s", app.openedLabel, db, coll, id, change), Buttons: []string{"取消", "提交"}, DefaultButton: 0, CancelButton: 0})
+		result, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: app.window, Type: mygo.MessageWarning, Title: "提交 MongoDB 文档", Message: "确认将此变更写入数据库？", Detail: detail, Buttons: []string{"取消", "提交"}, DefaultButton: 0, CancelButton: 0})
 		if err == nil && result.Button == 1 {
 			ctx, cancel := app.withTaskTimeout(30 * time.Second)
 			if isNew {
@@ -2262,6 +2263,10 @@ func (app *workbench) commitMongoDocument() {
 			}
 		})
 	}()
+}
+
+func mongoDocumentConfirmationDetail(environment, connectionLabel, database, collection, documentID, change string) string {
+	return fmt.Sprintf("环境：%s\n连接：%s\n数据库：%s\n集合：%s\n文档 ID：%s\n\n%s", environment, connectionLabel, database, collection, documentID, change)
 }
 
 func mongoDiffPreview(before, after string, isNew bool) string {
