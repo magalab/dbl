@@ -214,6 +214,8 @@ type workbench struct {
 	profileFavorite         bool
 	profileList             ui.ListState
 	showProfileManager      bool
+	showConnectionEditor    bool
+	showSettings            bool
 	objects                 []connection.Object
 	sqlNamespaces           []string
 	sqlNamespace            string
@@ -404,6 +406,31 @@ func (app *workbench) view(c *ui.Context) {
 		})
 		app.scheduleLayoutSave()
 	})
+	if ui.Modal(c, &app.showConnectionEditor, func() {
+		ui.Column(c).Width(760).Height(720).MaxHeightPercent(90).Padding(16).Gap(10).Children(func() {
+			ui.Row(c).Gap(8).Children(func() {
+				title := "新建连接"
+				if app.selectedProfileID != "" {
+					title = "编辑连接"
+				}
+				ui.Text(c, title).Bold().Role(ui.RoleHeading).Level(1).Grow(1)
+				if ui.Button(c, "关闭").Clicked() {
+					app.showConnectionEditor = false
+					app.discardConnectionEditorSecrets()
+				}
+			})
+			ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+				ui.Column(c).Padding(4).Gap(8).Children(func() {
+					app.connectionProfileForm(c)
+				})
+			})
+		})
+	}).Dismissed() {
+		app.discardConnectionEditorSecrets()
+	}
+	ui.Modal(c, &app.showSettings, func() {
+		app.settingsDialog(c)
+	})
 }
 
 func (app *workbench) currentLayout() preferences.Layout {
@@ -475,10 +502,15 @@ func (app *workbench) reportError(summary string, err error) {
 func (app *workbench) toolbar(c *ui.Context) {
 	ui.Row(c).Padding(8, 12).Gap(8).Children(func() {
 		ui.Text(c, "DBL").Bold()
-		appearanceButton := ui.Button(c, "外观 · "+appearanceLabel(app.appearance))
-		appearanceButton.Disabled(app.busy || app.exporting || app.dialogOpen || app.preferences == nil)
-		if appearanceButton.Clicked() {
-			app.cycleAppearance()
+		newConnection := ui.PrimaryButton(c, "新建连接…")
+		newConnection.Disabled(app.busy || app.exporting || app.dialogOpen)
+		if newConnection.Clicked() {
+			app.beginNewConnection()
+		}
+		settingsButton := ui.Button(c, "设置…")
+		settingsButton.Disabled(app.busy || app.exporting || app.dialogOpen)
+		if settingsButton.Clicked() {
+			app.showSettings = true
 		}
 		aiLabel := "AI 助手"
 		if app.showAI {
@@ -495,7 +527,7 @@ func (app *workbench) toolbar(c *ui.Context) {
 				app.aiCancel()
 			}
 		}
-		if app.keyStore == nil && app.documentStore == nil && app.etcdStore == nil {
+		if app.store == nil && app.keyStore == nil && app.documentStore == nil && app.etcdStore == nil {
 			pathInput := ui.TextInput(c, &app.path).Placeholder("SQLite 文件路径（例如 /Users/me/data.db）").Label("SQLite 文件路径").Grow(1)
 			pathInput.Disabled(app.busy || app.exporting || app.dialogOpen)
 			readOnly := ui.Checkbox(c, &app.readOnlyMode, "只读打开")
@@ -519,6 +551,8 @@ func (app *workbench) toolbar(c *ui.Context) {
 			if createButton.Clicked() {
 				app.chooseNewSQLiteFile()
 			}
+		} else if app.store != nil {
+			ui.Text(c, string(app.openedDriver)+" · "+app.openedLabel+" · "+environmentLabel(app.openedEnvironment)).TextColor(c.Theme().TextMuted).SingleLine()
 		} else if app.keyStore != nil {
 			ui.Text(c, "Redis 键空间 · "+app.openedLabel+" · "+environmentLabel(app.openedEnvironment)).TextColor(c.Theme().TextMuted)
 		} else if app.etcdStore != nil {
@@ -636,6 +670,63 @@ func (app *workbench) cycleAppearance() {
 	}()
 }
 
+func (app *workbench) beginNewConnection() {
+	if app.busy || app.exporting || app.dialogOpen {
+		return
+	}
+	app.selectedProfileID = ""
+	app.profileDriver = preferences.DriverSQLite
+	app.profileName, app.profileGroup = "", ""
+	app.profileEnvironment = preferences.EnvironmentDevelopment
+	app.profileHost, app.profilePort = "", ""
+	app.profileTLSMode = tlsModeLabel("verify-full")
+	app.profileDatabase, app.profileRedisDB, app.profileAuthSource = "", "0", ""
+	app.profileTLSCAPath, app.profileTLSCertPath, app.profileTLSKeyPath = "", "", ""
+	app.profileUsername, app.profileSecret, app.profileCredential = "", "", ""
+	app.removeCredential, app.profileReadOnly, app.profileFavorite = false, false, false
+	app.showConnectionEditor = true
+}
+
+func (app *workbench) discardConnectionEditorSecrets() {
+	app.profileSecret = ""
+	app.profileTLSCertPath, app.profileTLSKeyPath = "", ""
+	app.removeCredential = false
+}
+
+func (app *workbench) settingsDialog(c *ui.Context) {
+	ui.Column(c).Width(480).Padding(18).Gap(12).Children(func() {
+		ui.Row(c).Gap(8).Children(func() {
+			ui.Text(c, "设置").Bold().Role(ui.RoleHeading).Level(1).Grow(1)
+			if ui.Button(c, "关闭").Clicked() {
+				app.showSettings = false
+			}
+		})
+		ui.Text(c, "外观").Bold().Role(ui.RoleHeading).Level(2)
+		ui.Row(c).Gap(8).Children(func() {
+			ui.Text(c, "当前："+appearanceLabel(app.appearance)).Grow(1)
+			appearance := ui.Button(c, "切换外观")
+			appearance.Disabled(app.busy || app.exporting || app.dialogOpen || app.preferences == nil)
+			if appearance.Clicked() {
+				app.cycleAppearance()
+			}
+		})
+		ui.Text(c, "查询历史").Bold().Role(ui.RoleHeading).Level(2)
+		history := ui.Checkbox(c, &app.queryHistoryEnabled, "将最近查询 SQL 保存在本机")
+		history.Disabled(app.busy || app.exporting || app.dialogOpen || app.queryHistorySaving || app.cursor != nil || app.preferences == nil)
+		if history.Changed() {
+			app.setQueryHistoryEnabled(app.queryHistoryEnabled)
+		}
+		ui.Text(c, "历史默认只保留在本次运行中；开启后 SQL 会写入本机设置文件。可随时关闭并清除已保存历史。 ").TextColor(c.Theme().TextMuted)
+		ui.Text(c, "AI provider").Bold().Role(ui.RoleHeading).Level(2)
+		ui.Text(c, "Endpoint、模型和系统凭据库中的 API key 在 AI 助手工作区管理。 ").TextColor(c.Theme().TextMuted)
+		if ui.Button(c, "打开 AI 助手设置").Clicked() {
+			app.showSettings = false
+			app.showAI = true
+		}
+		ui.Text(c, "快捷键：⌘/Ctrl+N 新建连接，⌘/Ctrl+T 新建查询，⌘/Ctrl+, 打开设置。 ").TextColor(c.Theme().TextMuted)
+	})
+}
+
 func setAppearanceSource(appearance string) {
 	switch appearance {
 	case "light":
@@ -675,6 +766,35 @@ func (app *workbench) chooseSQLiteFile() {
 				access = sqlite.ReadOnly
 			}
 			app.openSQLite(access)
+		})
+	}()
+}
+
+func (app *workbench) chooseSQLiteProfileFile() {
+	if app.busy || app.exporting || app.dialogOpen {
+		return
+	}
+	app.dialogOpen = true
+	app.status = "请选择连接配置使用的 SQLite 文件…"
+	defaultPath := app.path
+	go func() {
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+			Title:       "选择 SQLite 连接文件",
+			DefaultPath: defaultPath,
+			Filters:     []mygo.FileFilter{{Name: "SQLite", Extensions: []string{"db", "sqlite", "sqlite3"}}},
+		})
+		app.window.Update(func() {
+			app.dialogOpen = false
+			if err != nil {
+				app.reportError("选择 SQLite 连接文件失败", err)
+				return
+			}
+			if len(paths) == 0 {
+				app.status = "已取消选择 SQLite 文件。"
+				return
+			}
+			app.path = paths[0]
+			app.status = "已选择 SQLite 连接文件；保存配置后可测试或打开。"
 		})
 	}()
 }
@@ -969,10 +1089,11 @@ func (app *workbench) savedConnectionProfiles(c *ui.Context) {
 			label = "[" + environmentLabel(profile.Environment) + "] " + label
 			label = strings.ToUpper(profile.Driver) + " · " + label
 			ui.Row(c).Gap(4).Children(func() {
-				selectButton := ui.Button(c, label)
-				selectButton.Disabled(app.busy || app.exporting || app.dialogOpen)
-				if selectButton.Clicked() {
+				editButton := ui.Button(c, label)
+				editButton.Disabled(app.busy || app.exporting || app.dialogOpen)
+				if editButton.Clicked() {
 					app.loadConnectionProfile(profile)
+					app.showConnectionEditor = true
 				}
 				copyButton := ui.Button(c, "复制")
 				copyButton.Disabled(app.busy || app.exporting || app.dialogOpen)
@@ -980,6 +1101,7 @@ func (app *workbench) savedConnectionProfiles(c *ui.Context) {
 					app.loadConnectionProfile(profile)
 					app.selectedProfileID = ""
 					app.profileName = profile.Name + " 副本"
+					app.showConnectionEditor = true
 					app.status = "已复制配置内容；保存后会创建新的连接配置。"
 				}
 				if profile.Driver == preferences.DriverSQLite {
@@ -1069,6 +1191,9 @@ func (app *workbench) savedConnectionProfiles(c *ui.Context) {
 			})
 		}).Grow(1).Label("已保存的数据库连接")
 	}
+}
+
+func (app *workbench) connectionProfileForm(c *ui.Context) {
 	ui.Text(c, "数据库类型").TextColor(c.Theme().TextMuted)
 	if ui.Select(c, &app.profileDriver, []string{preferences.DriverSQLite, preferences.DriverPostgreSQL, preferences.DriverMySQL, preferences.DriverRedis, preferences.DriverMongoDB, preferences.DriverEtcd}).Label("数据库类型").Changed() {
 		app.selectedProfileID = ""
@@ -1089,7 +1214,16 @@ func (app *workbench) savedConnectionProfiles(c *ui.Context) {
 		app.removeCredential = false
 	}
 	if app.profileDriver == preferences.DriverSQLite {
-		ui.Text(c, "SQLite 文件路径：在顶部路径栏选择或输入。")
+		ui.Text(c, "SQLite 文件").TextColor(c.Theme().TextMuted)
+		ui.Row(c).Gap(8).Children(func() {
+			path := ui.TextInput(c, &app.path).Placeholder("SQLite 数据库文件路径").Label("SQLite 文件路径").Grow(1)
+			path.Disabled(app.busy || app.exporting || app.dialogOpen)
+			browse := ui.Button(c, "浏览…")
+			browse.Disabled(app.busy || app.exporting || app.dialogOpen)
+			if browse.Clicked() {
+				app.chooseSQLiteProfileFile()
+			}
+		})
 	} else {
 		ui.Text(c, "主机").TextColor(c.Theme().TextMuted)
 		hostPlaceholder := "localhost"
@@ -2874,6 +3008,8 @@ func (app *workbench) saveConnectionProfile() {
 			app.recentConnectionIDs = settings.RecentConnectionIDs
 			app.selectedProfileID = saved.ID
 			app.profileCredential = saved.CredentialRef
+			app.showConnectionEditor = false
+			app.profileSecret = ""
 			app.profileTLSCertPath, app.profileTLSKeyPath = "", ""
 			app.removeCredential = false
 			if cleanupErr != nil {
@@ -4945,6 +5081,9 @@ func appMenuItems(app *workbench, goos string) []*mygo.MenuItem {
 			{Label: "关于 DBL", Click: func(*mygo.MenuItem, *mygo.Window) {
 				showAboutPanel()
 			}},
+			{Label: "设置…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) {
+				app.showSettings = true
+			}},
 			mygo.Separator(),
 			{Role: mygo.RoleServices},
 			mygo.Separator(),
@@ -4955,6 +5094,9 @@ func appMenuItems(app *workbench, goos string) []*mygo.MenuItem {
 			{Role: mygo.RoleQuit},
 		}},
 		{Label: "数据库", Submenu: []*mygo.MenuItem{
+			{Label: "新建连接…", Accelerator: "CmdOrCtrl+N", Click: func(*mygo.MenuItem, *mygo.Window) {
+				app.beginNewConnection()
+			}},
 			{Label: "打开 SQLite 文件…", Accelerator: "CmdOrCtrl+O", Click: func(*mygo.MenuItem, *mygo.Window) {
 				app.chooseSQLiteFile()
 			}},
@@ -4966,6 +5108,9 @@ func appMenuItems(app *workbench, goos string) []*mygo.MenuItem {
 			}},
 		}},
 		{Label: "查询", Submenu: []*mygo.MenuItem{
+			{Label: "新建查询工作区", Accelerator: "CmdOrCtrl+T", Click: func(*mygo.MenuItem, *mygo.Window) {
+				app.addWorkspace()
+			}},
 			{Label: "执行 SQL", Accelerator: "CmdOrCtrl+Return", Click: func(*mygo.MenuItem, *mygo.Window) {
 				app.executeSQL()
 			}},
@@ -4980,11 +5125,18 @@ func appMenuItems(app *workbench, goos string) []*mygo.MenuItem {
 		{Role: mygo.RoleWindowMenu},
 	}
 	if goos != "darwin" {
-		menuItems = append(menuItems, &mygo.MenuItem{Label: "帮助", Submenu: []*mygo.MenuItem{
-			{Label: "关于 DBL", Click: func(*mygo.MenuItem, *mygo.Window) {
-				showAboutPanel()
+		menuItems = append(menuItems,
+			&mygo.MenuItem{Label: "设置", Submenu: []*mygo.MenuItem{
+				{Label: "打开设置…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) {
+					app.showSettings = true
+				}},
 			}},
-		}})
+			&mygo.MenuItem{Label: "帮助", Submenu: []*mygo.MenuItem{
+				{Label: "关于 DBL", Click: func(*mygo.MenuItem, *mygo.Window) {
+					showAboutPanel()
+				}},
+			}},
+		)
 	}
 	return menuItems
 }

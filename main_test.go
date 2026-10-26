@@ -168,6 +168,7 @@ func TestEtcdWatchUIIndicatesTruncatedValues(t *testing.T) {
 
 func TestEtcdProfileShowsTLSAndCredentialControls(t *testing.T) {
 	app := newTestWorkbench()
+	app.showConnectionEditor = true
 	app.profileDriver = preferences.DriverEtcd
 	app.profileHost = "https://127.0.0.1:2379"
 	app.profileTLSMode = tlsModeLabel("verify-full")
@@ -638,6 +639,107 @@ func TestAboutMenuIsAvailableOnEachDesktopPlatform(t *testing.T) {
 	}
 }
 
+func TestMenusExposeCommonKeyboardShortcuts(t *testing.T) {
+	app := newTestWorkbench()
+	findMenuItem := func(items []*mygo.MenuItem, label string) *mygo.MenuItem {
+		for _, item := range items {
+			if item.Label == label {
+				return item
+			}
+			if found := findMenuItemInSubmenu(item.Submenu, label); found != nil {
+				return found
+			}
+		}
+		return nil
+	}
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		items := appMenuItems(app, goos)
+		for _, test := range []struct{ label, accelerator string }{
+			{label: "新建连接…", accelerator: "CmdOrCtrl+N"},
+			{label: "新建查询工作区", accelerator: "CmdOrCtrl+T"},
+		} {
+			item := findMenuItem(items, test.label)
+			if item == nil || item.Accelerator != test.accelerator {
+				t.Errorf("%s menu item %q = %#v, want accelerator %q", goos, test.label, item, test.accelerator)
+			}
+		}
+		settings := findMenuItem(items, "设置…")
+		if goos == "darwin" {
+			if settings == nil || settings.Accelerator != "CmdOrCtrl+," {
+				t.Errorf("macOS app menu settings = %#v, want CmdOrCtrl+,", settings)
+			}
+		} else if findMenuItem(items, "打开设置…") == nil || findMenuItem(items, "打开设置…").Accelerator != "CmdOrCtrl+," {
+			t.Errorf("%s settings menu is missing CmdOrCtrl+,", goos)
+		}
+	}
+}
+
+func findMenuItemInSubmenu(items []*mygo.MenuItem, label string) *mygo.MenuItem {
+	for _, item := range items {
+		if item.Label == label {
+			return item
+		}
+		if found := findMenuItemInSubmenu(item.Submenu, label); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func TestConnectionProfileEditorIsModal(t *testing.T) {
+	app := newTestWorkbench()
+	tester := ui.NewTester(app.view, 1280, 820)
+	if !tester.HasText("新建连接…") {
+		t.Fatal("main toolbar does not offer new connection")
+	}
+	if tester.HasText("数据库类型") {
+		t.Fatal("connection editor fields are still embedded in the sidebar")
+	}
+	if err := tester.Click("新建连接…"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if !tester.HasText("数据库类型") || !tester.HasText("保存连接配置") || !tester.HasText("关闭") {
+		t.Fatal("connection editor modal is missing its form or actions")
+	}
+	app.profileSecret = "unsaved-secret"
+	if err := tester.Click("关闭"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if app.showConnectionEditor || app.profileSecret != "" {
+		t.Fatal("closing the connection editor did not clear its transient secret")
+	}
+	if err := tester.Click("新建连接…"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	app.profileSecret = "escape-secret"
+	tester.Key(0, ui.KeyEscape)
+	tester.Frame()
+	if app.showConnectionEditor || app.profileSecret != "" {
+		t.Fatal("dismissing the connection editor with Escape did not clear its transient secret")
+	}
+	if err := tester.Click("设置…"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if !tester.HasText("查询历史") || !tester.HasText("打开 AI 助手设置") {
+		t.Fatal("settings dialog is missing its preference sections")
+	}
+}
+
+func TestConnectionProfileEditorFitsNarrowWindow(t *testing.T) {
+	app := newTestWorkbench()
+	app.showConnectionEditor = true
+	tester := ui.NewTester(app.view, 640, 480)
+	for _, label := range []string{"新建连接", "数据库类型", "SQLite 文件路径", "保存连接配置"} {
+		if !tester.HasText(label) {
+			t.Errorf("narrow connection editor is missing %q", label)
+		}
+	}
+}
+
 func TestReportErrorRedactsDatabaseServerValues(t *testing.T) {
 	app := newTestWorkbench()
 	app.reportError("查询失败", &pgconn.PgError{
@@ -720,6 +822,7 @@ func (testDocuments) ReplaceDocument(context.Context, string, string, string, st
 
 func TestRemoteConnectionProfileControlsAreAccessibleAndHideCredentialReferences(t *testing.T) {
 	app := newTestWorkbench()
+	app.showConnectionEditor = true
 	app.profileDriver = "postgresql"
 	app.profileCredential = "v1:0123456789abcdef0123456789abcdef"
 	app.connectionProfiles = []preferences.ConnectionProfile{{
@@ -835,6 +938,7 @@ func TestShutdownCancelsBackgroundTasksAndClosesActiveConnection(t *testing.T) {
 
 func TestMySQLProfileCanTestAndConnect(t *testing.T) {
 	app := newTestWorkbench()
+	app.showConnectionEditor = true
 	app.profileDriver = preferences.DriverMySQL
 	app.connectionProfiles = []preferences.ConnectionProfile{{
 		ID: "mysql-1", Name: "Analytics", Driver: preferences.DriverMySQL,
@@ -854,6 +958,7 @@ func TestMySQLProfileCanTestAndConnect(t *testing.T) {
 
 func TestPostgreSQLProfileShowsCustomCAAndStrictTLSPolicy(t *testing.T) {
 	app := newTestWorkbench()
+	app.showConnectionEditor = true
 	app.profileDriver = preferences.DriverPostgreSQL
 	app.connectionProfiles = []preferences.ConnectionProfile{{
 		ID: "postgres-1", Name: "Analytics", Driver: preferences.DriverPostgreSQL,
@@ -869,6 +974,7 @@ func TestPostgreSQLProfileShowsCustomCAAndStrictTLSPolicy(t *testing.T) {
 
 func TestRedisProfileCanTestConnectAndExplainsTLS(t *testing.T) {
 	app := newTestWorkbench()
+	app.showConnectionEditor = true
 	app.profileDriver = preferences.DriverRedis
 	app.connectionProfiles = []preferences.ConnectionProfile{{
 		ID: "redis-1", Name: "Cache", Driver: preferences.DriverRedis, Host: "cache.example.test", Port: 6379,
@@ -889,6 +995,7 @@ func TestRedisProfileCanTestConnectAndExplainsTLS(t *testing.T) {
 
 func TestMongoProfileCanTestAndConnect(t *testing.T) {
 	app := newTestWorkbench()
+	app.showConnectionEditor = true
 	app.profileDriver = preferences.DriverMongoDB
 	app.connectionProfiles = []preferences.ConnectionProfile{{ID: "mongo-1", Name: "Catalog", Driver: preferences.DriverMongoDB, Host: "mongo.example.test", Port: 27017, Database: "catalog", AuthSource: "admin", Username: "reader"}}
 	tester := ui.NewTester(app.view, 1440, 900)
@@ -1147,6 +1254,7 @@ func TestWorkspaceLimit(t *testing.T) {
 
 func TestWorkbenchControlsHaveAccessibleNames(t *testing.T) {
 	app := newTestWorkbench()
+	app.showConnectionEditor = true
 	app.activeQuery.columns = []sqlstream.Column{{Name: "value"}}
 	app.activeQuery.resultPath = ""
 	app.activeQuery.resultWindow.Append([][]any{{"sample"}})
