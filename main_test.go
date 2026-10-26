@@ -165,6 +165,76 @@ func TestEtcdWatchUIIndicatesTruncatedValues(t *testing.T) {
 	}
 }
 
+func TestEtcdProfileShowsTLSAndCredentialControls(t *testing.T) {
+	app := newTestWorkbench()
+	app.profileDriver = preferences.DriverEtcd
+	app.profileHost = "https://127.0.0.1:2379"
+	app.profileTLSMode = tlsModeLabel("verify-full")
+	app.profileTLSCAPath = "/tmp/etcd-ca.pem"
+	app.selectedProfileID = "etcd-1"
+	app.connectionProfiles = []preferences.ConnectionProfile{{
+		ID: "etcd-1", Name: "Config", Driver: preferences.DriverEtcd,
+		TLSCertRef: "v1:0123456789abcdef0123456789abcdef",
+		TLSKeyRef:  "v1:abcdef0123456789abcdef0123456789",
+	}}
+
+	tester := ui.NewTester(app.view, 1440, 900)
+	for _, label := range []string{
+		"主机 / Endpoint", "TLS 模式", "CA 证书路径", "系统凭据库已有客户端证书", "系统凭据库已有客户端私钥",
+		"用户名", "连接密码", "测试连接", "连接",
+		"etcd 使用用户名/密码认证；endpoint scheme 决定 HTTP 或 HTTPS。HTTPS 使用系统根证书和可选自定义 CA，也可配置 vault 中的 mTLS 客户端证书/私钥。",
+	} {
+		if !tester.HasText(label) {
+			t.Errorf("etcd profile UI is missing %q", label)
+		}
+	}
+	if tester.HasText("v1:0123456789abcdef0123456789abcdef") || tester.HasText("v1:abcdef0123456789abcdef0123456789") {
+		t.Fatal("etcd profile UI exposed an opaque credential reference")
+	}
+}
+
+func TestEtcdWorkspaceShowsRevisionLeaseWatchAndDeleteSafety(t *testing.T) {
+	app := newTestWorkbench()
+	app.etcdStore = &etcdadapter.Store{}
+	app.openedDriver = connection.DriverEtcd
+	app.openedLabel = "Config · https://127.0.0.1:2379"
+	app.etcdPrefix = "/services/"
+	app.etcdUsePrefix = true
+	app.etcdStartKey = "/services/next"
+	app.etcdEntries = []connection.EtcdEntry{{Key: "/services/api"}}
+	app.etcdSelectedKey = "/services/api"
+	app.etcdSelected = connection.EtcdEntry{
+		Key: "/services/api", Value: "https://api.internal", CreateRevision: 10,
+		ModRevision: 42, Version: 3, Lease: 7,
+	}
+	app.etcdValue = "https://api.internal"
+	app.etcdLeaseInfo = connection.EtcdLeaseInfo{TTL: 23, GrantedTTL: 60}
+	app.etcdWriteReady = true
+	app.etcdDeletePrefix = true
+	app.etcdDeleteReady = true
+	app.etcdDeleteTargetKey = "/services/"
+	app.etcdDeleteTargetPrefix = true
+	app.etcdDeleteCount = 4
+	app.etcdWatchRevision = "42"
+	app.etcdWatching = true
+	tester := ui.NewTester(app.view, 1440, 900)
+
+	for _, label := range []string{
+		"键或前缀", "按前缀匹配", "读取", "下一页", "etcd 键列表", "/services/api",
+		"创建修订 10 · 修改修订 42 · 版本 3 · Lease ID 7", "租约剩余 TTL 23 秒 · 授予 TTL 60 秒",
+		"Value", "Lease ID（可选）", "写入目标：/services/api；写入后将增加 revision。", "确认写入",
+		"按前缀删除", "将删除 此前缀匹配的键 \"/services/\"，共 4 项。", "确认删除",
+		"起始 revision", "停止 Watch",
+	} {
+		if !tester.HasText(label) {
+			t.Errorf("etcd workspace is missing %q", label)
+		}
+	}
+	if _, found := tester.Find("SQL 查询编辑器"); found {
+		t.Fatal("etcd workspace displayed the SQL editor")
+	}
+}
+
 func TestSQLRiskSummaryRequiresReviewForAmbiguousReadStatements(t *testing.T) {
 	tests := []struct {
 		statement string
