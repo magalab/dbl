@@ -954,6 +954,78 @@ func TestRedisWorkspaceShowsTypeTTLValueAndSafetyActions(t *testing.T) {
 	}
 }
 
+func TestRedisMutationConfirmationDescribesExactOperationAndTTLImpact(t *testing.T) {
+	tests := []struct {
+		name      string
+		mutation  connection.KeyMutation
+		wantLines []string
+	}{
+		{
+			name:      "string replacement clears existing expiry",
+			mutation:  connection.KeyMutation{Key: "cache:item", Type: "string", Value: "line1\nline2"},
+			wantLines: []string{"键：cache:item", "操作：替换整个字符串值", `值（11 字节，转义预览最多 4 KiB）：`, `"line1\nline2"`, "TTL：写入后永不过期（会清除现有 TTL）"},
+		},
+		{
+			name:      "hash field update keeps expiry unless a new ttl is set",
+			mutation:  connection.KeyMutation{Key: "cache:hash", Type: "hash", Field: "owner", Value: "Ada"},
+			wantLines: []string{"操作：新增或更新 Hash 字段", "字段：owner", "TTL：写入后保留现有 TTL"},
+		},
+		{
+			name:      "list append with ttl changes whole key expiry",
+			mutation:  connection.KeyMutation{Key: "queue:jobs", Type: "list", Value: "job", TTL: 5 * time.Second},
+			wantLines: []string{"操作：在列表末尾追加元素", "TTL：写入后设置整个键的 TTL：5s"},
+		},
+		{
+			name:      "set and sorted set describe member behavior",
+			mutation:  connection.KeyMutation{Key: "members", Type: "set", Value: "panda"},
+			wantLines: []string{"操作：添加 Set 成员（重复成员不会增加）"},
+		},
+		{
+			name:      "sorted set confirms score",
+			mutation:  connection.KeyMutation{Key: "scores", Type: "zset", Value: "panda", Score: 9.5},
+			wantLines: []string{"操作：新增成员或更新成员分数", "Score：9.5"},
+		},
+		{
+			name:      "stream appends a record",
+			mutation:  connection.KeyMutation{Key: "events", Type: "stream", Field: "kind", Value: "created"},
+			wantLines: []string{"操作：向 Stream 追加一条记录", "字段：kind"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			detail := redisMutationConfirmationDetail(test.mutation)
+			for _, want := range test.wantLines {
+				if !strings.Contains(detail, want) {
+					t.Errorf("confirmation detail is missing %q:\n%s", want, detail)
+				}
+			}
+		})
+	}
+}
+
+func TestRedisMutationConfirmationBoundsLargeValuePreview(t *testing.T) {
+	detail := redisMutationConfirmationDetail(connection.KeyMutation{
+		Key: "cache:large", Type: "string", Value: strings.Repeat("x", 8192),
+	})
+	if !strings.Contains(detail, "值（8192 字节，转义预览最多 4 KiB）") || !strings.Contains(detail, "预览已截断") {
+		t.Fatalf("large value preview lacks a clear bound: %q", detail)
+	}
+	if len(detail) > 4300 {
+		t.Fatalf("large confirmation detail was not bounded: %d bytes", len(detail))
+	}
+}
+
+func TestRedisOperationConfirmationIncludesEnvironmentAndConnection(t *testing.T) {
+	detail := redisOperationConfirmationDetail(
+		"生产", "Cache · redis.example.test/2", "将删除 Redis 键：cache:session\n此操作无法在 DBL 中撤销。",
+	)
+	for _, want := range []string{"环境：生产", "连接：Cache · redis.example.test/2", "将删除 Redis 键：cache:session", "此操作无法在 DBL 中撤销。"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("Redis confirmation detail is missing %q:\n%s", want, detail)
+		}
+	}
+}
+
 func TestSelectingRemoteProfilePreservesSQLiteQuickOpenPath(t *testing.T) {
 	app := newTestWorkbench()
 	app.path = "/tmp/local.sqlite"

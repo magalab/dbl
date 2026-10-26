@@ -2511,9 +2511,13 @@ func (app *workbench) confirmDeleteRedisKey() {
 		return
 	}
 	key, keys := app.redisSelectedKey, app.keyStore
+	detail := redisOperationConfirmationDetail(
+		environmentLabel(app.openedEnvironment), app.openedLabel,
+		fmt.Sprintf("将删除 Redis 键：%s\n此操作无法在 DBL 中撤销。", key),
+	)
 	app.dialogOpen = true
 	go func() {
-		result, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: app.window, Type: mygo.MessageWarning, Title: "删除 Redis 键", Message: "确认删除这个 Redis 键？", Detail: key, Buttons: []string{"取消", "删除"}, DefaultButton: 0, CancelButton: 0})
+		result, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: app.window, Type: mygo.MessageWarning, Title: "删除 Redis 键", Message: "确认删除这个 Redis 键？", Detail: detail, Buttons: []string{"取消", "删除"}, DefaultButton: 0, CancelButton: 0})
 		if err == nil && result.Button == 1 {
 			ctx, cancel := app.withTaskTimeout(10 * time.Second)
 			err = keys.DeleteKey(ctx, key)
@@ -2560,9 +2564,13 @@ func (app *workbench) confirmWriteRedisKey() {
 	}
 	mutation := connection.KeyMutation{Key: app.redisSelectedKey, Type: app.redisInfo.Type, Field: app.redisEntryField, Value: app.redisValueDraft, Score: score, TTL: time.Duration(ttlSeconds) * time.Second}
 	keys := app.keyStore
+	detail := redisOperationConfirmationDetail(
+		environmentLabel(app.openedEnvironment), app.openedLabel,
+		redisMutationConfirmationDetail(mutation),
+	)
 	app.dialogOpen = true
 	go func() {
-		result, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: app.window, Type: mygo.MessageWarning, Title: "写入 Redis 数据", Message: "确认写入该键？此操作会新增或更新指定元素。", Detail: fmt.Sprintf("键：%s\n类型：%s\n字段：%s\n值长度：%d 字节\nScore：%g\nTTL：%s", mutation.Key, mutation.Type, mutation.Field, len(mutation.Value), mutation.Score, redisTTLLabel(mutation.TTL)), Buttons: []string{"取消", "写入"}, DefaultButton: 0, CancelButton: 0})
+		result, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: app.window, Type: mygo.MessageWarning, Title: "写入 Redis 数据", Message: "确认执行下列操作？", Detail: detail, Buttons: []string{"取消", "写入"}, DefaultButton: 0, CancelButton: 0})
 		if err == nil && result.Button == 1 {
 			ctx, cancel := app.withTaskTimeout(10 * time.Second)
 			err = keys.WriteKey(ctx, mutation)
@@ -2580,6 +2588,46 @@ func (app *workbench) confirmWriteRedisKey() {
 			}
 		})
 	}()
+}
+
+func redisMutationConfirmationDetail(mutation connection.KeyMutation) string {
+	operation := "新增或更新数据"
+	switch mutation.Type {
+	case "string":
+		operation = "替换整个字符串值"
+	case "hash":
+		operation = "新增或更新 Hash 字段"
+	case "list":
+		operation = "在列表末尾追加元素"
+	case "set":
+		operation = "添加 Set 成员（重复成员不会增加）"
+	case "zset":
+		operation = "新增成员或更新成员分数"
+	case "stream":
+		operation = "向 Stream 追加一条记录"
+	}
+
+	ttlImpact := "写入后保留现有 TTL"
+	if mutation.Type == "string" {
+		ttlImpact = "写入后永不过期（会清除现有 TTL）"
+	}
+	if mutation.TTL > 0 {
+		ttlImpact = "写入后设置整个键的 TTL：" + mutation.TTL.Round(time.Second).String()
+	}
+
+	detail := fmt.Sprintf("键：%s\n操作：%s\n类型：%s", mutation.Key, operation, mutation.Type)
+	if mutation.Field != "" {
+		detail += "\n字段：" + mutation.Field
+	}
+	if mutation.Type == "zset" {
+		detail += fmt.Sprintf("\nScore：%g", mutation.Score)
+	}
+	detail += fmt.Sprintf("\n值（%d 字节，转义预览最多 4 KiB）：\n%s\nTTL：%s", len(mutation.Value), truncateText(strconv.Quote(mutation.Value), 4096), ttlImpact)
+	return detail
+}
+
+func redisOperationConfirmationDetail(environment, connectionLabel, operation string) string {
+	return fmt.Sprintf("环境：%s\n连接：%s\n%s", environment, connectionLabel, operation)
 }
 
 func redisTTLLabel(ttl time.Duration) string {
