@@ -35,7 +35,7 @@ var englishUI = map[string]string{
 	"输入页码后按回车跳转；可跳转到已读取的页。": "Enter a page number and press Return to jump; only loaded pages are available.",
 	"已加载页数；加号表示还有结果未读取。":    "Pages loaded so far; + means more results are unread.",
 	"统计总数": "Count total", "取消统计": "Cancel count", "取消正在后台运行的总数查询。": "Cancel the count query running in the background.",
-	"统计已取消 · 重试": "Count canceled · Retry", "重新执行总数统计。": "Run the total count again.", "数据库端取消请求失败：%s": "Database-side cancellation failed: %s",
+	"统计已取消 · 重试": "Count canceled · Retry", "重新执行总数统计。": "Run the total count again.", "数据库端取消请求失败：%s": "Database-side cancellation failed: %s", "重试取消": "Retry cancel",
 	"正在停止总数统计…": "Stopping the count query…", "正在停止…": "Stopping…", "已发送取消请求，等待数据库查询停止。": "Cancellation requested; waiting for the database query to stop.",
 	"在数据库后台执行只读 COUNT 查询，不会把全部行传到界面；数据变化时统计结果可能与当前查询流略有差异。": "Runs a read-only COUNT query in the database without loading every row into the UI. Concurrent changes may make the count differ slightly from the current result stream.",
 	"另一个工作区正在统计总数。": "Another workspace is already counting rows.",

@@ -329,6 +329,20 @@ func (app *workbench) resultCountButton(c *ui.Context, workspace *queryWorkspace
 	}
 	if app.resultCountWorkspace == workspace {
 		if app.resultCountCancelRequested {
+			if app.resultCountCancelError != "" {
+				retry := ui.Button(c, app.localized("重试取消")).
+					Padding(4, 8).
+					TextColor(c.Theme().Danger).
+					Background(c.Theme().Danger.Alpha(0.12)).
+					Border(1, c.Theme().Danger.Alpha(0.5)).
+					Tooltip(fmt.Sprintf(app.localized("数据库端取消请求失败：%s"), app.resultCountCancelError))
+				if retry.Clicked() {
+					app.resultCountCancelError = ""
+					app.resultCountServerCancelSent = false
+					app.cancelResultCountOnServer(workspace)
+				}
+				return
+			}
 			ui.Button(c, app.localized("正在停止…")).
 				Padding(4, 8).
 				TextColor(c.Theme().TextMuted).

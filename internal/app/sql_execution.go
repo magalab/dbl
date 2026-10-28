@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo/ui"
@@ -314,6 +315,7 @@ func (app *workbench) countRemainingResultRows() {
 		return
 	}
 	store := app.store
+	cancelable, supportsServerCancel := store.(connection.QueryCancellation)
 	connectionID := workspace.resultConnectionID
 	countedSQL := workspace.resultSQL
 	historyID := workspace.activeHistoryID
@@ -324,8 +326,11 @@ func (app *workbench) countRemainingResultRows() {
 	app.cancelResultCount = cancel
 	app.cancelResultCountServer = nil
 	app.resultCountCancelRequested = false
+	app.resultCountServerCancelReady = supportsServerCancel
 	app.resultCountServerCancelSent = false
 	app.resultCountCancelError = ""
+	cancelSignal := &atomic.Bool{}
+	app.resultCountCancelSignal = cancelSignal
 	workspace.resultCountCancelled = false
 	if app.activeQuery == workspace {
 		app.status = app.localized("正在数据库中统计总数…")
@@ -346,7 +351,7 @@ func (app *workbench) countRemainingResultRows() {
 		}
 		var cursor *sqlstream.Cursor
 		var err error
-		if cancelable, ok := store.(connection.QueryCancellation); ok {
+		if supportsServerCancel {
 			cursor, err = cancelable.StartQueryWithCancellation(ctx, countStatement, registerServerCancel)
 		} else {
 			cursor, err = store.StartQuery(ctx, countStatement)
@@ -379,7 +384,7 @@ func (app *workbench) countRemainingResultRows() {
 			}
 		}
 		timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
-		cancelled := errors.Is(ctx.Err(), context.Canceled)
+		cancelled := errors.Is(ctx.Err(), context.Canceled) || cancelSignal.Load()
 		app.window.Update(func() {
 			if app.resultCountGeneration != generation || app.resultCountWorkspace != workspace {
 				return
@@ -388,7 +393,9 @@ func (app *workbench) countRemainingResultRows() {
 			app.cancelResultCount = nil
 			app.cancelResultCountServer = nil
 			app.resultCountCancelRequested = false
+			app.resultCountServerCancelReady = false
 			app.resultCountServerCancelSent = false
+			app.resultCountCancelSignal = nil
 			resultStillCurrent := workspace.resultConnectionID == connectionID && workspace.resultSQL == countedSQL && workspace.activeHistoryID == historyID
 			switch {
 			case timedOut:
@@ -431,7 +438,10 @@ func (app *workbench) cancelResultCountForWorkspace(workspace *queryWorkspace) {
 		return
 	}
 	app.resultCountCancelRequested = true
-	if app.cancelResultCount != nil {
+	if app.resultCountCancelSignal != nil {
+		app.resultCountCancelSignal.Store(true)
+	}
+	if !app.resultCountServerCancelReady && app.cancelResultCount != nil {
 		app.cancelResultCount()
 	}
 	app.cancelResultCountOnServer(workspace)
@@ -441,10 +451,11 @@ func (app *workbench) cancelResultCountForWorkspace(workspace *queryWorkspace) {
 }
 
 func (app *workbench) cancelResultCountOnServer(workspace *queryWorkspace) {
-	if workspace == nil || app.resultCountWorkspace != workspace || app.cancelResultCountServer == nil || app.resultCountServerCancelSent {
+	if workspace == nil || app.resultCountWorkspace != workspace || !app.resultCountServerCancelReady || app.cancelResultCountServer == nil || app.resultCountServerCancelSent {
 		return
 	}
 	serverCancel := app.cancelResultCountServer
+	cancelQuery := app.cancelResultCount
 	generation := app.resultCountGeneration
 	app.resultCountServerCancelSent = true
 	go func() {
@@ -452,13 +463,20 @@ func (app *workbench) cancelResultCountOnServer(workspace *queryWorkspace) {
 		err := serverCancel(ctx)
 		cancel()
 		if err == nil {
+			// The server has acknowledged KILL QUERY. Only now cancel the local
+			// context, so the driver cannot make the UI look finished while the
+			// database is still working on the aggregate.
+			if cancelQuery != nil {
+				cancelQuery()
+			}
 			return
 		}
 		app.window.Update(func() {
-			if app.resultCountGeneration != generation || workspace.resultConnectionID == "" {
+			if app.resultCountGeneration != generation || app.resultCountWorkspace != workspace {
 				return
 			}
 			app.resultCountCancelError = err.Error()
+			app.resultCountServerCancelSent = false
 			if app.activeQuery == workspace && !app.busy {
 				app.status = fmt.Sprintf(app.localized("数据库端取消请求失败：%s"), app.resultCountCancelError)
 			}

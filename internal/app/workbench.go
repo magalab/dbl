@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -349,8 +350,10 @@ type workbench struct {
 	cancelResultCount            context.CancelFunc
 	cancelResultCountServer      connection.QueryCancel
 	resultCountCancelRequested   bool
+	resultCountServerCancelReady bool
 	resultCountServerCancelSent  bool
 	resultCountCancelError       string
+	resultCountCancelSignal      *atomic.Bool
 	resultCountGeneration        uint64
 	exporting                    bool
 	cancelExport                 context.CancelFunc

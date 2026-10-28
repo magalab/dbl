@@ -69,7 +69,8 @@ type QueryCancel func(context.Context) error
 
 // QueryCancellation is an optional SQL capability for queries that need
 // explicit server-side cancellation. The adapter registers the cancel
-// function before starting the query so callers can cancel long operations.
+// function before starting the query so callers can safely defer local
+// cancellation until the server acknowledges the request.
 type QueryCancellation interface {
 	StartQueryWithCancellation(context.Context, string, func(QueryCancel)) (*sqlstream.Cursor, error)
 }
