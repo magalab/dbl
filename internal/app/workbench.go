@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -354,6 +355,9 @@ type workbench struct {
 	resultCountServerCancelSent  bool
 	resultCountCancelError       string
 	resultCountCancelSignal      *atomic.Bool
+	resultCountServerCancelDone  chan struct{}
+	resultCountServerCancelMu    sync.Mutex
+	resultCountServerCancelTask  connection.QueryCancel
 	resultCountGeneration        uint64
 	exporting                    bool
 	cancelExport                 context.CancelFunc

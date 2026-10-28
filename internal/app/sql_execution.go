@@ -329,6 +329,10 @@ func (app *workbench) countRemainingResultRows() {
 	app.resultCountServerCancelReady = supportsServerCancel
 	app.resultCountServerCancelSent = false
 	app.resultCountCancelError = ""
+	app.resultCountServerCancelDone = nil
+	app.resultCountServerCancelMu.Lock()
+	app.resultCountServerCancelTask = nil
+	app.resultCountServerCancelMu.Unlock()
 	cancelSignal := &atomic.Bool{}
 	app.resultCountCancelSignal = cancelSignal
 	workspace.resultCountCancelled = false
@@ -339,6 +343,9 @@ func (app *workbench) countRemainingResultRows() {
 		defer cancel()
 		var total int64
 		registerServerCancel := func(serverCancel connection.QueryCancel) {
+			app.resultCountServerCancelMu.Lock()
+			app.resultCountServerCancelTask = serverCancel
+			app.resultCountServerCancelMu.Unlock()
 			app.window.Update(func() {
 				if app.resultCountGeneration != generation || app.resultCountWorkspace != workspace {
 					return
@@ -396,6 +403,10 @@ func (app *workbench) countRemainingResultRows() {
 			app.resultCountServerCancelReady = false
 			app.resultCountServerCancelSent = false
 			app.resultCountCancelSignal = nil
+			app.resultCountServerCancelDone = nil
+			app.resultCountServerCancelMu.Lock()
+			app.resultCountServerCancelTask = nil
+			app.resultCountServerCancelMu.Unlock()
 			resultStillCurrent := workspace.resultConnectionID == connectionID && workspace.resultSQL == countedSQL && workspace.activeHistoryID == historyID
 			switch {
 			case timedOut:
@@ -451,13 +462,23 @@ func (app *workbench) cancelResultCountForWorkspace(workspace *queryWorkspace) {
 }
 
 func (app *workbench) cancelResultCountOnServer(workspace *queryWorkspace) {
-	if workspace == nil || app.resultCountWorkspace != workspace || !app.resultCountServerCancelReady || app.cancelResultCountServer == nil || app.resultCountServerCancelSent {
+	if workspace == nil || app.resultCountWorkspace != workspace || !app.resultCountServerCancelReady || app.resultCountServerCancelSent {
 		return
 	}
 	serverCancel := app.cancelResultCountServer
+	if serverCancel == nil {
+		app.resultCountServerCancelMu.Lock()
+		serverCancel = app.resultCountServerCancelTask
+		app.resultCountServerCancelMu.Unlock()
+	}
+	if serverCancel == nil {
+		return
+	}
 	cancelQuery := app.cancelResultCount
 	generation := app.resultCountGeneration
 	app.resultCountServerCancelSent = true
+	done := make(chan struct{})
+	app.resultCountServerCancelDone = done
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		err := serverCancel(ctx)
@@ -469,8 +490,10 @@ func (app *workbench) cancelResultCountOnServer(workspace *queryWorkspace) {
 			if cancelQuery != nil {
 				cancelQuery()
 			}
+			close(done)
 			return
 		}
+		close(done)
 		app.window.Update(func() {
 			if app.resultCountGeneration != generation || app.resultCountWorkspace != workspace {
 				return
@@ -484,10 +507,29 @@ func (app *workbench) cancelResultCountOnServer(workspace *queryWorkspace) {
 	}()
 }
 
-func (app *workbench) cancelResultCountForConnection(connectionID string) {
+func (app *workbench) cancelResultCountForConnection(connectionID string) <-chan struct{} {
 	if app.resultCountWorkspace != nil && app.resultCountWorkspace.resultConnectionID == connectionID {
-		app.cancelResultCountForWorkspace(app.resultCountWorkspace)
+		workspace := app.resultCountWorkspace
+		app.cancelResultCountForWorkspace(workspace)
+		serverDone := app.resultCountServerCancelDone
+		cancelQuery := app.cancelResultCount
+		if serverDone == nil {
+			if cancelQuery != nil {
+				cancelQuery()
+			}
+			return nil
+		}
+		stopped := make(chan struct{})
+		go func() {
+			<-serverDone
+			if cancelQuery != nil {
+				cancelQuery()
+			}
+			close(stopped)
+		}()
+		return stopped
 	}
+	return nil
 }
 
 // resultCountStatement wraps only a single SELECT already classified as a

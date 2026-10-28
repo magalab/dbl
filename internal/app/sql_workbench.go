@@ -331,7 +331,7 @@ func (app *workbench) closeConnection() {
 		app.status = app.localized("请先应用或丢弃此连接结构编辑器中的修改，再关闭连接。 ")
 		return
 	}
-	app.cancelResultCountForConnection(connectionID)
+	stopCount := app.cancelResultCountForConnection(connectionID)
 	app.collapseActiveConnectionTree(connectionID)
 	live := app.liveConnections[connectionID]
 	delete(app.liveConnections, connectionID)
@@ -412,6 +412,9 @@ func (app *workbench) closeConnection() {
 	app.busy = true
 	app.status = app.localized("正在关闭数据库连接…")
 	go func() {
+		if stopCount != nil {
+			<-stopCount
+		}
 		if cursor != nil {
 			_ = cursor.Close()
 		}

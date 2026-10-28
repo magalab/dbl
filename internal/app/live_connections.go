@@ -14,8 +14,13 @@ func (app *workbench) registerLiveConnection(id string, conn connection.Connecti
 		app.liveConnections = make(map[string]liveConnection)
 	}
 	if previous, exists := app.liveConnections[id]; exists && previous.connection != conn {
-		app.cancelResultCountForConnection(id)
-		go previous.connection.Close()
+		stopCount := app.cancelResultCountForConnection(id)
+		go func() {
+			if stopCount != nil {
+				<-stopCount
+			}
+			_ = previous.connection.Close()
+		}()
 	}
 	app.liveConnections[id] = liveConnection{connection: conn, profile: profile}
 }
@@ -249,8 +254,11 @@ func (app *workbench) closeLiveConnection(id string) error {
 	if !ok {
 		return nil
 	}
-	app.cancelResultCountForConnection(id)
+	stopCount := app.cancelResultCountForConnection(id)
 	delete(app.liveConnections, id)
+	if stopCount != nil {
+		<-stopCount
+	}
 	return live.connection.Close()
 }
 
@@ -292,12 +300,15 @@ func (app *workbench) closeProfileConnection(profile preferences.ConnectionProfi
 	}
 	app.collapseConnectionTree(profile.ID, profileConnectionID(profile))
 	var inactive []connection.Connection
+	var countStops []<-chan struct{}
 	for _, id := range ids {
 		if active && id == app.openedConnectionID {
 			continue
 		}
 		if live, ok := app.liveConnections[id]; ok {
-			app.cancelResultCountForConnection(id)
+			if stopCount := app.cancelResultCountForConnection(id); stopCount != nil {
+				countStops = append(countStops, stopCount)
+			}
 			delete(app.liveConnections, id)
 			inactive = append(inactive, live.connection)
 		}
@@ -308,6 +319,9 @@ func (app *workbench) closeProfileConnection(profile preferences.ConnectionProfi
 	if len(inactive) > 0 {
 		go func() {
 			var firstErr error
+			for _, stopCount := range countStops {
+				<-stopCount
+			}
 			for _, conn := range inactive {
 				if err := conn.Close(); err != nil && firstErr == nil {
 					firstErr = err
