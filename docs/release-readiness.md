@@ -6,8 +6,8 @@
 
 | 平台 | 候选版本 | 架构 | 状态 |
 |---|---|---|---|
-| macOS | 12+ | arm64 | 2026-10-26 针对连接模态面板、设置面板和快捷键改动重建 `/tmp/dbl-after-modal/darwin-arm64/DBL.app`；bundle ID `com.magalab.dbl`、版本 `0.1.0`、最低系统版本 12.0、自定义图标正确，ad-hoc codesign 校验通过，107 个资源与源目录逐文件哈希一致。未启动此最新 bundle，故连接弹窗、设置和快捷键仍只有 UI tester 证据；此前旧测试窗口曾通过 SQLite、PostgreSQL、MySQL profile 基础连接/查询及 SQL 编辑器 smoke，不能替代最新 bundle 验收。自定义 CA 表单、AI、生产环境提示尚无可见 bundle 验收；数据库集成已覆盖 PostgreSQL/MySQL 私有 CA + verify-full、MongoDB/Redis/etcd 单机及认证/TLS；正式签名、公证、干净安装/卸载未验证 |
-| macOS | 12+ | amd64/universal | MyGo 生成 Universal `.app` 和 `.dmg`；主程序包含 arm64 + x86_64，ad-hoc codesign 与 `hdiutil verify` 通过，DMG 内 107 个资源哈希匹配；Intel 硬件启动仍待验证 |
+| macOS | 12+ | arm64 | 2026-10-29 基于提交 `5a95ac0` 使用 MyGo 0.6.2 重建候选包 `/private/tmp/dbl-latest-candidate/darwin-arm64/DBL.app`（ad-hoc 签名，跳过 DMG）；bundle ID `com.magalab.dbl`、版本 `0.1.0`、最低系统版本 12.0，arm64 Mach-O 与 `codesign --verify --deep --strict` 均通过。源 `resources/` 的 108 个文件全部与包内哈希一致，包内另有 `AppIcon.icns` 和 `Assets.car`。未启动该 bundle，故连接弹窗、设置、快捷键和本轮 COUNT 取消行为仍缺最新包的可见交互验收；此前旧测试窗口的 SQLite、PostgreSQL、MySQL 基础连接/查询 smoke 不能替代本次验收。自定义 CA 表单、AI、生产环境提示尚无可见 bundle 验收；数据库集成已覆盖 PostgreSQL/MySQL 私有 CA + verify-full、MongoDB/Redis/etcd 单机及认证/TLS；正式签名、公证、干净安装/卸载未验证 |
+| macOS | 12+ | amd64/universal | 2026-10-29 基于提交 `5a95ac0` 使用 MyGo 0.6.2 重建 universal `DBL.app`（ad-hoc 签名，跳过 DMG）；`lipo -archs` 确认 arm64 + x86_64，bundle ID `com.magalab.dbl`、版本 `0.1.0`、最低系统版本 12.0、codesign 校验通过，源 `resources/` 的 108 个文件全部与包内哈希一致。此次 DMG 构建在 `hdiutil create` 阶段失败，宿主返回“设备未配置”；旧 DMG 的验证不代表本次提交。应用未启动，Intel 硬件启动和最新 UI 交互仍待验证 |
 | Linux | GTK 3 发行版 | amd64、arm64 | 两架构 deb 与 tar.gz 均已生成；Debian 12 arm64 与 OrbStack/QEMU amd64 容器安装 deb 后，应用均在 Xvfb 下运行至少 8 秒；107 个资源哈希匹配。arm64 容器通过 deb 卸载和普通用户 tar 完整安装/启动/卸载：应用文件移除、配置/数据库哨兵文件保留。GNOME Keyring/D-Bus 在正式 app ID 下通过 32 KiB `v2:` 分块凭据的三进程 smoke。原生桌面/登录会话、其他发行版与目标硬件仍待验证 |
 | Windows | Windows 10/11 | amd64、arm64 | 两架构 exe 与 NSIS Setup 安装器均已生成；打包目录 107 个资源哈希与源一致；目标系统安装运行、ACL、凭据库、签名和卸载待验证 |
 
