@@ -8,8 +8,8 @@
 |---|---|---|---|
 | macOS | 12+ | arm64 | 2026-10-29 基于提交 `5a95ac0` 使用 MyGo 0.6.2 重建候选包 `/private/tmp/dbl-latest-candidate/darwin-arm64/DBL.app`（ad-hoc 签名，跳过 DMG）；bundle ID `com.magalab.dbl`、版本 `0.1.0`、最低系统版本 12.0，arm64 Mach-O 与 `codesign --verify --deep --strict` 均通过。源 `resources/` 的 108 个文件全部与包内哈希一致，包内另有 `AppIcon.icns` 和 `Assets.car`。未启动该 bundle，故连接弹窗、设置、快捷键和本轮 COUNT 取消行为仍缺最新包的可见交互验收；此前旧测试窗口的 SQLite、PostgreSQL、MySQL 基础连接/查询 smoke 不能替代本次验收。自定义 CA 表单、AI、生产环境提示尚无可见 bundle 验收；数据库集成已覆盖 PostgreSQL/MySQL 私有 CA + verify-full、MongoDB/Redis/etcd 单机及认证/TLS；正式签名、公证、干净安装/卸载未验证 |
 | macOS | 12+ | amd64/universal | 2026-10-29 基于提交 `5a95ac0` 使用 MyGo 0.6.2 重建 universal `DBL.app`（ad-hoc 签名，跳过 DMG）；`lipo -archs` 确认 arm64 + x86_64，bundle ID `com.magalab.dbl`、版本 `0.1.0`、最低系统版本 12.0、codesign 校验通过，源 `resources/` 的 108 个文件全部与包内哈希一致。此次 DMG 构建在 `hdiutil create` 阶段失败，宿主返回“设备未配置”；旧 DMG 的验证不代表本次提交。应用未启动，Intel 硬件启动和最新 UI 交互仍待验证 |
-| Linux | GTK 3 发行版 | amd64、arm64 | 两架构 deb 与 tar.gz 均已生成；Debian 12 arm64 与 OrbStack/QEMU amd64 容器安装 deb 后，应用均在 Xvfb 下运行至少 8 秒；107 个资源哈希匹配。arm64 容器通过 deb 卸载和普通用户 tar 完整安装/启动/卸载：应用文件移除、配置/数据库哨兵文件保留。GNOME Keyring/D-Bus 在正式 app ID 下通过 32 KiB `v2:` 分块凭据的三进程 smoke。原生桌面/登录会话、其他发行版与目标硬件仍待验证 |
-| Windows | Windows 10/11 | amd64、arm64 | 两架构 exe 与 NSIS Setup 安装器均已生成；打包目录 107 个资源哈希与源一致；目标系统安装运行、ACL、凭据库、签名和卸载待验证 |
+| Linux | GTK 3 发行版 | amd64、arm64 | 2026-10-29 基于提交 `005883a` 使用 MyGo 0.6.2 生成 amd64/arm64 可执行文件、`.deb` 与 tar.gz；ELF 架构正确，源 `resources/` 的 108 个文件在两种架构的 staging、tar.gz 和 `.deb` 中全部逐文件哈希匹配。此前 Debian 12 arm64 与 OrbStack/QEMU amd64 容器安装/启动/卸载 smoke、GNOME Keyring/D-Bus 三进程 smoke 针对之前构建，不能替代本提交包的运行验收。原生桌面/登录会话、其他发行版与目标硬件仍待验证 |
+| Windows | Windows 10/11 | amd64、arm64 | 2026-10-29 基于提交 `005883a` 使用 MyGo 0.6.2 生成 amd64/arm64 PE32+ GUI 可执行文件；架构正确，源 `resources/` 的 108 个文件在两种架构 staging 目录均逐文件哈希匹配。当前构建机没有 NSIS（`makensis`），本轮未生成 Setup 安装器；目标系统运行、安装卸载、ACL、凭据库和正式签名仍待验证 |
 
 SQLite 使用 `modernc.org/sqlite v1.61.0`，保持 `CGO_ENABLED=0`。MyGo 固定 `v0.6.2`。MongoDB、etcd 和 AI 的版本/协议见 `docs/decisions/`。
 
