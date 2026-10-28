@@ -1,0 +1,7 @@
+* text=auto eol=lf
+
+*.car binary
+*.dmg binary
+*.icns binary
+*.png binary
+*.sqlite binary

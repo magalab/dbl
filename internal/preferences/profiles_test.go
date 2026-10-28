@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -44,7 +45,7 @@ func TestRemoteConnectionProfileCRUDCopyAndPersistence(t *testing.T) {
 	if err := json.Unmarshal(contents, &persisted); err != nil {
 		t.Fatal(err)
 	}
-	if len(persisted.ConnectionProfiles) != 1 || persisted.ConnectionProfiles[0] != profile {
+	if len(persisted.ConnectionProfiles) != 1 || !reflect.DeepEqual(persisted.ConnectionProfiles[0], profile) {
 		t.Fatalf("persisted profiles = %#v, want %#v", persisted.ConnectionProfiles, profile)
 	}
 
@@ -101,7 +102,7 @@ func TestLegacySQLiteProfilesMigrateToConnectionProfiles(t *testing.T) {
 	profiles := store.Settings().ConnectionProfiles
 	want := connectionProfile(legacy)
 	want.Environment = EnvironmentDevelopment
-	if len(profiles) != 1 || profiles[0] != want {
+	if len(profiles) != 1 || !reflect.DeepEqual(profiles[0], want) {
 		t.Fatalf("migrated profiles = %#v, want %#v", profiles, want)
 	}
 

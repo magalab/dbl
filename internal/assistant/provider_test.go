@@ -5,25 +5,43 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
+}
+
+func testHTTPResponse(request *http.Request, status int, headers http.Header, body string) *http.Response {
+	if headers == nil {
+		headers = make(http.Header)
+	}
+	return &http.Response{
+		StatusCode: status,
+		Header:     headers,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    request,
+	}
+}
+
 func TestOpenAICompatibleStreamsOnlyPreparedMessages(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("request method = %s, want POST", r.Method)
+	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Method != http.MethodPost {
+			t.Errorf("request method = %s, want POST", request.Method)
 		}
-		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+		if got := request.Header.Get("Authorization"); got != "Bearer test-key" {
 			t.Errorf("authorization = %q", got)
 		}
-		if got := r.Header.Get("Accept"); got != "text/event-stream" {
+		if got := request.Header.Get("Accept"); got != "text/event-stream" {
 			t.Errorf("Accept = %q", got)
 		}
-		body, err := io.ReadAll(r.Body)
+		body, err := io.ReadAll(request.Body)
 		if err != nil {
 			t.Errorf("read request body: %v", err)
 		}
@@ -34,17 +52,13 @@ func TestOpenAICompatibleStreamsOnlyPreparedMessages(t *testing.T) {
 		if strings.Contains(string(body), "test-key") {
 			t.Error("API key was included in the JSON request body")
 		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hello \"}}]}\n\n"))
-		if flusher, ok := w.(http.Flusher); ok {
-			flusher.Flush()
-		}
-		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"world\"}}]}\n\ndata: [DONE]\n\n"))
-	}))
-	defer server.Close()
+		return testHTTPResponse(request, http.StatusOK, http.Header{"Content-Type": []string{"text/event-stream"}},
+			"data: {\"choices\":[{\"delta\":{\"content\":\"hello \"}}]}\n\n"+
+			"data: {\"choices\":[{\"delta\":{\"content\":\"world\"}}]}\n\ndata: [DONE]\n\n"), nil
+	})
 
 	var chunks []string
-	provider := OpenAICompatible{Endpoint: server.URL, Model: "test-model", APIKey: []byte("test-key")}
+	provider := OpenAICompatible{Endpoint: "https://provider.example/v1/chat/completions", Model: "test-model", APIKey: []byte("test-key"), Client: &http.Client{Transport: transport}}
 	err := provider.Stream(context.Background(), []Message{{Role: "user", Content: "only this prompt"}}, func(chunk string) error {
 		chunks = append(chunks, chunk)
 		return nil
@@ -59,22 +73,26 @@ func TestOpenAICompatibleStreamsOnlyPreparedMessages(t *testing.T) {
 
 func TestOpenAICompatibleDoesNotFollowRedirects(t *testing.T) {
 	var targetRequests atomic.Int32
-	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		targetRequests.Add(1)
-	}))
-	defer target.Close()
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, target.URL, http.StatusFound)
-	}))
-	defer origin.Close()
+	var requests atomic.Int32
+	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests.Add(1)
+		if request.URL.Host == "target.example" {
+			targetRequests.Add(1)
+		}
+		location, _ := url.Parse("https://target.example/redirected")
+		return testHTTPResponse(request, http.StatusFound, http.Header{"Location": []string{location.String()}}, ""), nil
+	})
 
-	provider := OpenAICompatible{Endpoint: origin.URL, Model: "model", APIKey: []byte("secret")}
+	provider := OpenAICompatible{Endpoint: "https://origin.example/chat", Model: "model", APIKey: []byte("secret"), Client: &http.Client{Transport: transport}}
 	err := provider.Stream(context.Background(), []Message{{Role: "user", Content: "prompt"}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "HTTP 302") {
 		t.Fatalf("redirect response error = %v, want HTTP 302", err)
 	}
 	if got := targetRequests.Load(); got != 0 {
 		t.Fatalf("redirect target received %d request(s)", got)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("transport received %d request(s), want only the original request", got)
 	}
 }
 
@@ -103,21 +121,16 @@ func TestOpenAICompatibleRejectsUnsafeConfiguration(t *testing.T) {
 
 func TestOpenAICompatibleCancellationStopsStream(t *testing.T) {
 	started := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte(": connected\n\n"))
-		if flusher, ok := w.(http.Flusher); ok {
-			flusher.Flush()
-		}
+	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
 		close(started)
-		<-r.Context().Done()
-	}))
-	defer server.Close()
+		<-request.Context().Done()
+		return nil, request.Context().Err()
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	provider := OpenAICompatible{Endpoint: server.URL, Model: "model", APIKey: []byte("secret")}
+	provider := OpenAICompatible{Endpoint: "http://localhost/v1/chat/completions", Model: "model", APIKey: []byte("secret"), Client: &http.Client{Transport: transport}}
 	go func() {
 		done <- provider.Stream(ctx, []Message{{Role: "user", Content: "prompt"}}, nil)
 	}()

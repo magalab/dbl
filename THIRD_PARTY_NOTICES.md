@@ -2,7 +2,7 @@
 
 生成日期：2026-10-26。范围为 MyGo 原生应用运行包在 darwin/arm64、darwin/amd64、linux/amd64、linux/arm64、windows/amd64、windows/arm64 上的 Go 依赖并集；版本来自当前 `go.mod` 模块解析结果。依赖许可证和通知文件随 `resources/THIRD_PARTY_LICENSES/` 分发。
 
-本清单不为 DBL 自身代码选择许可证；仓库目前没有声明项目许可证，公开分发前仍需由项目所有者决定。
+DBL 自有代码许可证待项目所有者确认。本清单只列第三方 Go 依赖；每项依赖仍遵循其对应许可证。
 
 扫描使用 `github.com/google/go-licenses v1.6.0`。`modernc.org/libc`、`mathutil` 和 `memory` 的模块根许可证逐条核对后按 BSD-3-Clause 记录；扫描器低置信度分类不作为这三项的依据。MySQL 驱动 v1.10.1 使用 MPL-2.0，其锁定版本源文件随许可证文本保存在资源目录对应路径中。
 

@@ -2,8 +2,12 @@ package mysql
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -144,5 +148,130 @@ func TestRedactErrorDoesNotExposePassword(t *testing.T) {
 	err := redactError("connect", errors.New("dial failed using password="+secret), secret)
 	if strings.Contains(err.Error(), secret) || !strings.Contains(err.Error(), "[redacted]") {
 		t.Fatalf("redacted error = %q", err)
+	}
+}
+
+type queryCancelTestState struct {
+	queryStarted chan struct{}
+	killed       chan struct{}
+	killSQL      chan string
+	queryOnce    sync.Once
+	killOnce     sync.Once
+}
+
+type queryCancelTestConnector struct{ state *queryCancelTestState }
+
+func (connector queryCancelTestConnector) Connect(context.Context) (driver.Conn, error) {
+	return queryCancelTestConn{state: connector.state}, nil
+}
+
+func (queryCancelTestConnector) Driver() driver.Driver { return queryCancelTestDriver{} }
+
+type queryCancelTestDriver struct{}
+
+func (queryCancelTestDriver) Open(string) (driver.Conn, error) {
+	return nil, errors.New("connector should open test connections")
+}
+
+type queryCancelTestConn struct{ state *queryCancelTestState }
+
+func (queryCancelTestConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("prepared statements are not used")
+}
+
+func (queryCancelTestConn) Close() error { return nil }
+
+func (queryCancelTestConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("transactions are not used")
+}
+
+func (conn queryCancelTestConn) QueryContext(ctx context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	if query == "SELECT CONNECTION_ID()" {
+		return &queryCancelTestRows{values: []driver.Value{int64(42)}}, nil
+	}
+	conn.state.queryOnce.Do(func() { close(conn.state.queryStarted) })
+	select {
+	case <-conn.state.killed:
+		return nil, errors.New("query interrupted by server")
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (conn queryCancelTestConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
+	conn.state.killSQL <- query
+	conn.state.killOnce.Do(func() { close(conn.state.killed) })
+	return driver.RowsAffected(0), nil
+}
+
+type queryCancelTestRows struct {
+	values []driver.Value
+	done   bool
+}
+
+func (*queryCancelTestRows) Columns() []string { return []string{"connection_id"} }
+func (*queryCancelTestRows) Close() error      { return nil }
+
+func (rows *queryCancelTestRows) Next(dest []driver.Value) error {
+	if rows.done {
+		return io.EOF
+	}
+	rows.done = true
+	copy(dest, rows.values)
+	return nil
+}
+
+func TestStartQueryWithCancellationKillsMySQLServerQuery(t *testing.T) {
+	state := &queryCancelTestState{
+		queryStarted: make(chan struct{}),
+		killed:       make(chan struct{}),
+		killSQL:      make(chan string, 1),
+	}
+	db := sql.OpenDB(queryCancelTestConnector{state: state})
+	defer db.Close()
+	store := &Store{db: db, config: mysqldriver.NewConfig()}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	registered := make(chan connection.QueryCancel, 1)
+	queryDone := make(chan error, 1)
+	go func() {
+		_, err := store.StartQueryWithCancellation(ctx, "SELECT COUNT(*) FROM records", func(cancelQuery connection.QueryCancel) {
+			registered <- cancelQuery
+		})
+		queryDone <- err
+	}()
+
+	var cancelQuery connection.QueryCancel
+	select {
+	case cancelQuery = <-registered:
+	case <-time.After(time.Second):
+		t.Fatal("server-side cancel function was not registered")
+	}
+	select {
+	case <-state.queryStarted:
+	case <-time.After(time.Second):
+		t.Fatal("count query did not start")
+	}
+
+	cancelCtx, cancelRequest := context.WithTimeout(context.Background(), time.Second)
+	defer cancelRequest()
+	if err := cancelQuery(cancelCtx); err != nil {
+		t.Fatalf("server-side cancel returned an error: %v", err)
+	}
+	select {
+	case query := <-state.killSQL:
+		if query != "KILL QUERY 42" {
+			t.Fatalf("kill statement = %q, want KILL QUERY 42", query)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server-side cancellation did not issue KILL QUERY")
+	}
+	select {
+	case err := <-queryDone:
+		if err == nil || !strings.Contains(err.Error(), "interrupted") {
+			t.Fatalf("query result error = %v, want server interruption", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("count query did not stop after KILL QUERY")
 	}
 }

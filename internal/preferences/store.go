@@ -28,6 +28,7 @@ const MaxQueryHistorySQLBytes = 64 << 10
 type Settings struct {
 	Version             int                 `json:"version"`
 	Appearance          string              `json:"appearance,omitempty"`
+	Language            string              `json:"language,omitempty"`
 	Layout              *Layout             `json:"layout,omitempty"`
 	LastSQLitePath      string              `json:"last_sqlite_path,omitempty"`
 	RecentSQLitePaths   []string            `json:"recent_sqlite_paths,omitempty"`
@@ -57,11 +58,14 @@ type AISettings struct {
 	APIKeyRef string `json:"api_key_ref,omitempty"`
 }
 
-// Layout contains non-sensitive splitter and result-panel dimensions.
+// Layout contains non-sensitive splitter and editor/result-panel dimensions.
 type Layout struct {
-	LeftWidth      float32 `json:"left_width"`
-	InspectorWidth float32 `json:"inspector_width"`
-	ResultHeight   float32 `json:"result_height"`
+	LeftWidth         float32 `json:"left_width"`
+	InspectorWidth    float32 `json:"inspector_width"`
+	ResultHeight      float32 `json:"result_height"`
+	QueryEditorHeight float32 `json:"query_editor_height,omitempty"`
+	LeftCollapsed     bool    `json:"left_collapsed,omitempty"`
+	RightCollapsed    bool    `json:"right_collapsed,omitempty"`
 }
 
 // SQLiteProfile contains only non-secret local connection metadata.
@@ -140,6 +144,9 @@ func OpenAt(dir string) (*Store, error) {
 	if settings.Appearance != "" && settings.Appearance != "system" && settings.Appearance != "light" && settings.Appearance != "dark" {
 		return nil, fmt.Errorf("unsupported appearance setting %q", settings.Appearance)
 	}
+	if settings.Language != "" && settings.Language != "zh" && settings.Language != "en" {
+		return nil, fmt.Errorf("unsupported language setting %q", settings.Language)
+	}
 	if settings.Layout != nil {
 		layout := sanitizeLayout(*settings.Layout)
 		if layout == (Layout{}) {
@@ -196,10 +203,19 @@ func OpenAt(dir string) (*Store, error) {
 	return store, nil
 }
 
+// CredentialDirectory returns the private directory used for encrypted local
+// credentials. It is separate from settings.json so secrets never enter JSON.
+func (store *Store) CredentialDirectory() string {
+	if store == nil {
+		return ""
+	}
+	return filepath.Join(store.dir, "credentials")
+}
+
 // SetLayout persists valid window splitter dimensions.
 func (store *Store) SetLayout(layout Layout, revision uint64) error {
 	layout = sanitizeLayout(layout)
-	if layout == (Layout{}) {
+	if layout.LeftWidth == 0 && layout.InspectorWidth == 0 && layout.ResultHeight == 0 && layout.QueryEditorHeight == 0 {
 		return errors.New("layout dimensions are invalid")
 	}
 	store.mu.Lock()
@@ -229,6 +245,9 @@ func sanitizeLayout(layout Layout) Layout {
 	if invalidDimension(layout.ResultHeight, maxDimension) {
 		layout.ResultHeight = 0
 	}
+	if invalidDimension(layout.QueryEditorHeight, maxDimension) {
+		layout.QueryEditorHeight = 0
+	}
 	return layout
 }
 
@@ -249,6 +268,27 @@ func (store *Store) SetAppearance(appearance string, revision uint64) error {
 	settings := store.settings
 	settings.Version = 1
 	settings.Appearance = appearance
+	if err := writeSettings(store.dir, settings); err != nil {
+		return err
+	}
+	store.settings = settings
+	store.revision = revision
+	return nil
+}
+
+// SetLanguage persists the UI language.
+func (store *Store) SetLanguage(language string, revision uint64) error {
+	if language != "zh" && language != "en" {
+		return errors.New("language must be zh or en")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if revision <= store.revision {
+		return errors.New("stale preferences update")
+	}
+	settings := store.settings
+	settings.Version = 1
+	settings.Language = language
 	if err := writeSettings(store.dir, settings); err != nil {
 		return err
 	}

@@ -1,0 +1,587 @@
+package app
+
+import (
+	"fmt"
+	"strings"
+)
+
+var englishUI = map[string]string{
+	"切换左侧边栏 · ⌘/Ctrl+B":         "Toggle left sidebar · ⌘/Ctrl+B",
+	"打开 AI 助手 · ⌘/Ctrl+Shift+B": "Open AI Assistant · ⌘/Ctrl+Shift+B",
+	"关闭 AI 助手 · ⌘/Ctrl+Shift+B": "Close AI Assistant · ⌘/Ctrl+Shift+B",
+	"连接总数":                      "Connections", "已连接": "Connected", "快速开始": "Quick Start", "常用操作": "Common Actions",
+	"表": "Tables", "视图": "Views", "物化视图": "Materialized Views", "存储过程": "Procedures", "函数": "Functions", "序列": "Sequences", "类型": "Types", "扩展": "Extensions", "事件触发器": "Event Triggers", "用户与权限": "Users & Privileges",
+	"数据表 / 视图": "Table / view", "SQL 关键字": "SQL keyword", "SQL 函数": "SQL function",
+	"无法打开用户与权限查询工作区。 ":                  "Could not open the users and privileges query workspace. ",
+	"已打开用户与权限查询草稿。":                     "Opened the users and privileges query draft.",
+	"没有已保存连接。新建连接或打开一个 SQLite 文件开始使用。 ": "No saved connections. Create a connection or open a SQLite file to get started. ",
+	"也可以从左侧展开连接，或右键对象查看操作。":             "Expand a connection in the sidebar or right-click an object for more actions.",
+	"历史查询": "Recent Queries", "查看全部": "View All", "还没有查询记录。 ": "No query history yet. ",
+	"根据当前数据库上下文生成 SQL 草稿；发送和执行前都需要你确认。 ": "Draft SQL using database context. Review it before sending or executing. ",
+	"已将历史 SQL 放入查询工作区。":                  "Loaded the historical SQL into a query workspace.",
+	"开发": "Development", "预发": "Staging", "生产": "Production", "未标记": "Unspecified",
+	"新建连接…": "New Connection…", "新建查询": "New Query", "打开 AI 助手": "Open AI Assistant", "关闭 AI 助手": "Close AI Assistant",
+	"设置": "Settings", "设置…": "Settings…", "关闭": "Close", "常规": "General", "外观": "Appearance", "当前：": "Current: ",
+	"浅色": "Light", "深色": "Dark", "跟随系统": "System", "外观：跟随系统": "Appearance: System", "外观：浅色": "Appearance: Light", "外观：深色": "Appearance: Dark", "语言": "Language", "语言：中文": "Language: Chinese", "语言：English": "Language: English", "切换外观": "Cycle Appearance", "切换语言": "Switch Language", "中文": "中文", "English": "English",
+	"查询历史": "Query History", "将最近查询 SQL 保存在本机": "Save recent SQL queries locally", "历史默认只保留在本次运行中；开启后 SQL 会写入本机设置文件。可随时关闭并清除已保存历史。 ": "History stays in this session by default. When enabled, SQL is saved in local settings. You can turn it off and clear saved history at any time.",
+	"AI provider": "AI Provider", "AI 助手已启用": "AI Assistant Enabled", "AI 助手未启用": "AI Assistant Disabled", "配置…": "Configure…", "保存时移除已保存 API key": "Remove saved API key when saving", "启用 AI（请求会发送到上方 provider）": "Enable AI (requests are sent to the provider above)", "Endpoint、模型和本机加密凭据库中的 API key 在 AI 助手工作区管理。 ": "Manage the endpoint, model, and API key in the AI Assistant workspace.", "打开 AI 助手设置": "Open AI Assistant Settings",
+	"切换语言 · 中文": "Switch Language · 中文", "切换语言 · English": "Switch Language · English", "保存语言设置失败": "Failed to save language preference", "语言设置已保存。": "Language preference saved.",
+	"连接与资源": "Connections & Resources", "尚未打开 SQLite 文件": "No SQLite file is open", "在顶部输入路径后打开数据库。": "Enter a path above to open a database.", "最近打开": "Recently Opened", "已保存的连接": "Saved Connections", "检查器": "Inspector",
+	"⌕ 搜索连接或文件…": "Search connections or files…", "仅显示活跃连接": "Show active connections only", "尚无连接配置": "No saved connections", "全部类型": "All Types",
+	"连接后显示对象": "Connect to browse objects", "正在加载对象…": "Loading objects…", "正在连接…": "Connecting…",
+	"连接失败：": "Connection failed: ", "加载对象失败：": "Failed to load objects: ", "连接失败": "Connection failed",
+	"工作区": "Workspaces", "数据": "Data", "刷新数据": "Refresh Data", "在查询中打开": "Open in Query",
+	"第一页": "First Page", "上一页": "Previous Page", "下一页": "Next Page", "最后一页": "Last Page", "暂无结果": "No rows", "跳转": "Go", "页码": "Page", "跳转到页码": "Go to page", "每页": "Per page", "每页行数": "Rows per page", "来源": "Source",
+	"输入页码后按回车跳转；可跳转到已读取的页。": "Enter a page number and press Return to jump; only loaded pages are available.",
+	"已加载页数；加号表示还有结果未读取。":    "Pages loaded so far; + means more results are unread.",
+	"统计总数": "Count total", "取消统计": "Cancel count", "取消正在后台运行的总数查询。": "Cancel the count query running in the background.",
+	"统计已取消 · 重试": "Count canceled · Retry", "重新执行总数统计。": "Run the total count again.", "数据库端取消请求失败：%s": "Database-side cancellation failed: %s",
+	"正在停止总数统计…": "Stopping the count query…", "正在停止…": "Stopping…", "已发送取消请求，等待数据库查询停止。": "Cancellation requested; waiting for the database query to stop.",
+	"在数据库后台执行只读 COUNT 查询，不会把全部行传到界面；数据变化时统计结果可能与当前查询流略有差异。": "Runs a read-only COUNT query in the database without loading every row into the UI. Concurrent changes may make the count differ slightly from the current result stream.",
+	"另一个工作区正在统计总数。": "Another workspace is already counting rows.",
+	"总数由单独的只读 COUNT 查询得出；数据变化时可能与当前读取结果略有差异。": "The total comes from a separate read-only COUNT query. Concurrent changes may make it differ slightly from the rows currently being streamed.",
+	"当前页显示 %d 行 · 统计总数 %d 行":                  "Showing %d rows on this page · database count %d rows",
+	"正在数据库中统计总数…":                             "Counting rows in the database…", "统计中…": "Counting…", "此查询不支持安全的总数统计。": "This query cannot be counted safely.",
+	"总数统计超过 %s，已停止。": "Count exceeded %s and was stopped.", "总数统计已取消。": "Count canceled.", "总数统计完成 · 共 %d 行": "Count complete · %d rows", "统计总数失败": "Count query failed",
+	"跳到当前已加载结果的最后一页": "Go to the last currently loaded page",
+	"查询完成，共 %d 行。":   "Query complete · %d rows.", "结果还在读取；下一页可继续加载。": "Results are still loading. Use Next Page to continue.",
+	"查询结果还有后续页。":            "More result pages are available.",
+	"当前页显示 %d 行 · 已读取 %d 行": "Showing %d rows on this page · %d rows read", "当前页显示 %d 行 · 已读取 %d 行（查询未完成）": "Showing %d rows on this page · %d rows read (query incomplete)",
+	" · %d 行内容过大，未显示": " · %d oversized rows were not displayed", "较早的结果已释放": "Earlier results have been released", "排序仅作用于已读取的结果": "Sorting applies only to loaded results",
+	"当前页显示 %d 行": "Showing %d rows on this page", "当前页显示 %d 行 · 共 %d 行": "Showing %d rows on this page · %d rows total", "当前页显示 %d 行 · 查询完成，共 %d 行": "Showing %d rows on this page · Query complete, %d rows total",
+	"新增行 · 已读取 %d 行":      "New row · %d rows read",
+	"仅保存在本机；SQL 可能包含敏感值。": "Stored only on this device; SQL may contain sensitive values.",
+	"查询历史保存说明":            "Query history storage details", "加载此 SQL 到编辑器": "Load this SQL into the editor",
+	"编辑表结构": "Edit Table Structure", "表结构": "Table Structure", "字段": "Columns", "SQL 预览": "SQL Preview",
+	"刷新结构": "Refresh Structure", "新增字段": "Add Column", "应用结构变更": "Apply Structure Changes", "读取表字段…": "Loading table columns…",
+	"此结构编辑器属于另一个连接。切换回来源连接后才能刷新或应用。 ":                "This structure editor belongs to another connection. Switch back to refresh or apply changes. ",
+	"字段变更会先生成 SQL 预览；执行前还会显示目标连接和完整语句供确认。主键定义保留现状。 ": "Column edits generate a SQL preview first. The target connection and full statement are shown for confirmation before execution. Primary key definitions are preserved. ",
+	"数据类型": "Data type", "非空": "Not null", "默认值（SQL）": "Default (SQL)", "约束": "Constraints",
+	"启用": "Set", "例如 CURRENT_TIMESTAMP": "e.g. CURRENT_TIMESTAMP", "默认表达式": "Default expression", "主键": "Primary key", "生成 / 自增": "Generated / auto-increment",
+	"删除字段": "Drop Column", "撤销删除": "Undo Drop", "此表目前没有可编辑字段。 ": "This table has no editable columns. ",
+	"即将应用的 DDL": "DDL to apply", "当前没有结构变更。 ": "There are no structure changes. ", "复制 SQL": "Copy SQL",
+	"检查影响后点击‘应用结构变更’；应用动作会再次要求确认。 ": "Review the impact, then choose Apply Structure Changes. Execution requires a separate confirmation. ",
+	"表结构已载入，可在字段页编辑并预览 SQL。":        "Table structure loaded. Edit columns and preview SQL in the Columns tab.", "结构 SQL 已复制。": "Structure SQL copied.",
+	"无法生成 SQL：": "Cannot generate SQL: ", "切换回结构编辑器所属的连接后再生成 SQL。 ": "Switch back to the connection that owns this editor before generating SQL. ",
+	"当前驱动暂不支持图形化结构修改。 ": "This driver does not support graphical structure editing yet. ", "字段名不能为空。 ": "Column names cannot be empty. ", "字段名不能重复。 ": "Column names must be unique. ",
+	"数据类型只能包含类型名、空格、括号、逗号和类型修饰符。 ": "Data types may contain only type names, spaces, parentheses, commas, and type modifiers. ",
+	"默认表达式不能为空，也不能包含分号或 SQL 注释。 ":  "Default expressions cannot be empty or contain semicolons or SQL comments. ", "字段元数据已变化，请刷新结构后重试。 ": "Column metadata changed. Refresh the structure and try again. ",
+	"目标字段名仍被另一字段占用；请分步重命名后再应用。 ":                         "The target column name is still in use. Rename or drop the other column in a separate apply first. ",
+	"生成列或自增列不能通过此编辑器修改。 ":                                "Generated and auto-increment columns cannot be changed in this editor. ",
+	"SQLite 的现有字段类型、非空和默认值需要重建整张表；当前编辑器仅支持重命名、删除和新增字段。 ": "Changing an existing SQLite column's type, nullability, or default requires rebuilding the table. This editor currently supports renaming, dropping, and adding columns. ",
+	"结构变更尚未应用": "Unapplied Structure Changes", "此结构编辑器有未应用的修改。": "This structure editor has unapplied changes.",
+	"可以继续编辑、丢弃草稿，或先应用结构变更再关闭。": "Continue editing, discard the draft, or apply the changes before closing.", "应用并关闭": "Apply and Close",
+	"丢弃结构草稿": "Discard Structure Draft", "刷新会丢弃尚未应用的字段修改。": "Refreshing will discard unapplied column edits.",
+	"数据库中的结构不受影响；会重新读取服务端字段状态。": "The database structure is unchanged; column metadata will be reloaded from the server.", "丢弃并刷新": "Discard and Refresh",
+	"正在应用表结构变更…": "Applying table structure changes…", "表结构变更已应用。": "Table structure changes applied.",
+	"无法应用结构变更：连接已变化或不再可用。 ":            "Cannot apply structure changes: the connection changed or is no longer available. ",
+	"当前驱动没有结构编辑能力。 ":                   "The current driver does not support schema editing. ",
+	"MySQL 会逐条执行 DDL，若中途失败，先刷新结构再继续。 ": "MySQL applies DDL statements one at a time. If one fails, refresh the structure before continuing. ",
+	"刷新数据后，表格内容会显示在这里。":                "Refresh data to show table rows here.",
+	"新增行": "Add Row", "删除行": "Delete Row", "提交修改 (%d)": "Save Changes (%d)", "丢弃修改": "Discard Changes", "回滚": "Rollback",
+	"快捷键保存": "Keyboard shortcut to save", "撤销所有尚未提交的修改": "Discard all unapplied changes", "删除当前选中的数据行": "Delete the selected data row", "没有待提交的数据修改。": "There are no data changes to save.",
+	"复制名称": "Copy Name", "生成 SQL": "Generate SQL", "SELECT 模板": "SELECT Template", "INSERT 模板": "INSERT Template", "UPDATE 模板": "UPDATE Template", "DELETE 模板": "DELETE Template", "重命名模板": "Rename Template",
+	"新标签页查看": "View in New Tab", "查看 DDL": "View DDL", "生成重命名 SQL": "Generate Rename SQL", "复制结构 SQL": "Copy Structure SQL",
+	"应用单元格修改": "Apply Cell Edit", "取消单元格修改": "Cancel Cell Edit", "按 Esc 取消单元格编辑": "Press Esc to cancel cell editing", "NULL": "NULL", "留空使用默认值": "Leave blank for default",
+	"新增行 · 留空表示使用数据库默认值；勾选 NULL 可写入空值": "Add Row · Leave blank to use the database default; check NULL to write a null value",
+	"加入待提交修改": "Stage Insert", "取消新增行": "Cancel Insert", "标记为删除": "Mark Row for Deletion", "取消标记删除": "Undo Mark for Deletion", "待删除": "marked for deletion",
+	"已取消待删除行。": "Row deletion was unstaged.", "已丢弃待提交的数据修改。": "Staged data changes were discarded.",
+	"待提交的行修改": "Staged Row Changes", "取消本项修改": "Undo This Change", "已取消一项待提交修改。": "One staged change was undone.",
+	"使用数据库默认值": "Use database defaults", " · 源行 %d": " · source row %d", "另有 %d 项修改未展开。": "%d more changes are not shown.",
+	"此表没有可用的主键列；可以新增行，但不能安全地原地修改或删除现有行。 ": "No usable primary key is available in the result. You can add rows, but existing rows cannot be safely edited or deleted. ",
+	"请先保存或丢弃此连接数据面板中的修改，再关闭连接。 ":          "Save or discard staged changes in this connection's data workspace before closing it. ",
+	"请先保存或丢弃此连接数据面板中的修改，再重新打开连接。 ":        "Save or discard staged changes in this connection's data workspace before reopening it. ",
+	"请先应用或丢弃此连接结构编辑器中的修改，再关闭连接。 ":         "Apply or discard structure changes in this connection's editor before closing it. ",
+	"停止查询读取失败，未提交表格修改":                    "Failed to stop query reading; table changes were not saved.",
+	"先提交或丢弃待处理的数据修改，再刷新。":                 "Save or discard staged data changes before refreshing.",
+	"请切换回此数据工作区所属的连接后再刷新。 ":               "Switch back to this data workspace's connection before refreshing. ",
+	"当前连接不支持写入此数据表，或连接已切换。 ":              "This table is read-only or its connection is no longer available. ",
+	"当前连接不支持表格数据编辑。 ":                     "This connection does not support table editing. ",
+	"关闭数据工作区": "Close Data Workspace", "继续编辑": "Keep Editing", "丢弃并关闭": "Discard and Close", "保存并关闭": "Save and Close",
+	"此数据工作区有 %d 项未提交修改。关闭前要怎样处理？": "This data workspace has %d unsaved changes. What would you like to do before closing?",
+	"提交表格修改": "Save Table Changes", "即将在连接‘%s’中提交 %d 项表格修改。请核对目标和变更内容。": "About to save %[2]d table changes to connection ‘%[1]s’. Review the target and changes.",
+	"提交":          "Save",
+	"点击单元格即可暂存修改": "Click a cell to stage an edit",
+	"环境：%s\n驱动：%s\n连接：%s\n对象：%s\n事务：同一事务提交；发生错误时整批回滚\n\n%s": "Environment: %s\nDriver: %s\nConnection: %s\nObject: %s\nTransaction: all changes commit together; any failure rolls back the batch\n\n%s",
+	"新增：%d 行；修改：%d 行；删除：%d 行":                               "Insert: %d rows; update: %d rows; delete: %d rows",
+	"变更预览：": "Change preview:", "新增": "Insert", "修改": "Update", "删除": "Delete",
+	"%d. %s（使用数据库默认值）": "%d. %s (use database defaults)", "%d. %s：%s": "%d. %s: %s",
+	"数据面板最多保留 10000 行；导出会重跑只读查询，不覆盖已有文件。": "The data panel retains up to 10,000 rows. Export reruns the read-only query and never overwrites an existing file.",
+	"正在打开数据面板：": "Opening data panel: ",
+	"数据库":       "Database", "查询": "Query", "关于 DBL": "About DBL", "打开 SQLite 文件…": "Open SQLite File…", "新建 SQLite 文件…": "New SQLite File…", "关闭连接": "Close Connection",
+	"尚未连接": "Not Connected", "已保存的连接和最近打开的文件会显示在这里。": "Saved connections and recently opened files appear here.",
+	"搜索连接或文件…": "Search connections or files…", "搜索连接或文件": "Search connections or files", "没有匹配的连接。": "No matching connections.", "该连接驱动尚不可用。": "This connection driver is not available yet.",
+	"欢迎使用 DBL": "Welcome to DBL", "打开一个数据库连接后，这里会显示数据库概览。你也可以随时新建查询工作区。 ": "Open a database connection to see its overview here. You can create a query workspace at any time.",
+	"已打开查询工作区。": "Query workspace opened.",
+	"table":     "Table", "view": "View", "index": "Index", "trigger": "Trigger", "schema": "Schema",
+	"也可以从左侧打开已保存的连接或最近访问的文件。 ": "You can also open a saved connection or recent file from the sidebar.",
+	"从左侧选择表、视图或其他数据库对象查看详情。 ":  "Select a table, view, or another database object on the left to see its details.",
+	"数据库已连接": "Database connected", "从左侧目录选择对象查看详情，或新建查询工作区。 ": "Select an object from the sidebar to inspect it, or create a query workspace.",
+	"单击左侧表名打开数据面板；选择对象后可查看详情。 ": "Click a table in the sidebar to open its data panel, or select an object to view its details.",
+	"新建查询工作区": "New Query Workspace", "执行 SQL": "Run SQL",
+	"面板": "Panels", "左侧边栏": "Left Sidebar", "帮助": "Help", "请先新建查询工作区。": "Create a query workspace first.",
+	"快捷键": "Keyboard Shortcuts",
+	"⌘/Ctrl+N 新建连接 · ⌘/Ctrl+O 打开 SQLite 文件":    "⌘/Ctrl+N New Connection · ⌘/Ctrl+O Open SQLite File",
+	"⌘/Ctrl+T 新建查询 · ⌘/Ctrl+Enter 执行 SQL":      "⌘/Ctrl+T New Query · ⌘/Ctrl+Enter Run SQL",
+	"⌘/Ctrl+B 折叠左侧栏 · ⌘/Ctrl+Shift+B 切换 AI 助手": "⌘/Ctrl+B Toggle Left Sidebar · ⌘/Ctrl+Shift+B Toggle AI Assistant",
+	"⌘/Ctrl+, 打开设置":                            "⌘/Ctrl+, Open Settings",
+	"AI 助手":                                    "AI Assistant", "AI 回答": "AI Response", "AI 草稿执行前审阅": "Review AI draft before execution", "CSV": "CSV", "JSON": "JSON", "DBL · 原生 SQL 工作区": "DBL · Native SQL Workbench",
+	"应用操作": "App Actions", "工作区布局": "Workspace Layout", "面板快捷键": "Panel Shortcuts",
+	"JSON 树暂不可用：当前内容不是有效 JSON。 ": "JSON tree unavailable: the content is not valid JSON.", "MongoDB TLS 使用系统根证书和可选自定义 CA 验证证书和主机名。": "MongoDB TLS verifies the certificate and hostname using system roots and an optional custom CA.",
+	"MongoDB TLS 使用系统根证书和可选自定义 CA 验证证书链，不验证主机名。": "MongoDB TLS verifies the certificate chain but not the hostname.", "MongoDB TLS 加密但不验证服务器证书。": "MongoDB TLS encrypts traffic without verifying the server certificate.", "MongoDB TLS 已关闭。": "MongoDB TLS is disabled.",
+	"MongoDB 数据库": "MongoDB Databases", "MongoDB 文档": "MongoDB Documents", "MongoDB 文档 · ": "MongoDB Documents · ",
+	"MySQL 驱动尚未接入；此配置可保存，暂不能连接。TLS 模式将在连接时应用。": "The MySQL driver is not available yet. This profile can be saved but cannot connect. TLS mode will apply when the driver is added.",
+	"Redis DB 索引（非负整数）": "Redis DB index (non-negative integer)", "Redis TLS 使用系统根证书验证证书和主机名。": "Redis TLS verifies certificates and hostnames using system roots.",
+	"Redis TLS 加密但不验证服务器证书。": "Redis TLS encrypts traffic without verifying the server certificate.", "Redis TLS 已关闭。": "Redis TLS is disabled.", "Redis TLS 验证证书链，不验证主机名。": "Redis TLS verifies the certificate chain but not the hostname.",
+	"Redis 使用键浏览器，不支持 SQL 查询。": "Redis uses the key browser and does not support SQL queries.", "Redis 键": "Redis Keys", "Redis 键空间": "Redis Keyspace", "Redis 键空间 · ": "Redis Keyspace · ",
+	"已加载 %d 个键": "Loaded %d keys", "没有匹配的键。": "No matching keys.",
+	"SQL 定义": "SQL Definition", "SQL 类型估计：": "Estimated SQL type: ", "SQL 写操作确认": "Confirm SQL Write", "SQL 执行确认": "Confirm SQL Execution", "生产环境 SQL 确认": "Production SQL Confirmation",
+	"此语句将在当前数据库连接执行。请核对目标对象和影响范围。":   "This statement will run on the current database connection. Check the target and its impact.",
+	"无法确认此语句为只读操作。请检查自定义函数或其他潜在副作用。": "This statement could not be confirmed as read-only. Check custom functions and other possible side effects.",
+	"读取类（仍需检查函数副作用和数据库方言）":           "Read-only query (function side effects and SQL dialect still matter)",
+	"未知或可能有副作用，需要确认":                 "Unknown or potentially side-effecting; confirmation required", "未知或可能有副作用；请仔细检查": "Unknown or potentially side-effecting; review carefully",
+	"数据修改类": "Data modification", "结构或维护类": "Schema or maintenance operation",
+	"SQLite 文件": "SQLite File", "TLS 不可用时会回退到明文连接。": "Falls back to an unencrypted connection when TLS is unavailable.",
+	"TLS 已关闭，连接流量不会加密。": "TLS is disabled; connection traffic is not encrypted.", "Watch": "Watch", "etcd 使用用户名/密码认证；endpoint scheme 决定 HTTP 或 HTTPS。HTTPS 使用系统根证书和可选自定义 CA，也可配置 vault 中的 mTLS 客户端证书/私钥。": "etcd supports username/password authentication. The endpoint scheme selects HTTP or HTTPS. HTTPS uses system roots and an optional custom CA; mTLS client certificates can also be configured in the credential store.",
+	"etcd 前缀空间 · ": "etcd Prefix Space · ", "etcd 配置空间": "etcd Configuration Space", "etcd 键空间": "etcd Keyspace",
+	"http://127.0.0.1:2379 或多个 endpoint（逗号分隔）": "http://127.0.0.1:2379 or multiple endpoints (comma-separated)",
+	"丢弃预览": "Discard Preview", "主机": "Host", "云端兼容 provider": "Cloud-compatible Provider",
+	"从左侧选择数据库和集合。文档结果按需加载。": "Select a database and collection on the left. Documents load on demand.", "从左侧选择键，或在键/前缀栏读取一页。可从 revision 开始 watch。": "Select a key on the left, or load a page from the key/prefix fields. You can start watching from a revision.",
+	"以下是发送的 system/user 消息和目标模型。API key 只在 Authorization header 中，不显示在此预览。确认后才会联网。 ": "Review the system/user messages and target model. The API key is only sent in the Authorization header and is hidden here. The request connects after you confirm.",
+	"保存 AI 设置": "Save AI Settings", "保存连接配置": "Save Connection Profile", "保存并连接": "Save and Connect", "请填写连接名称。": "Enter a connection name.", "请填写主机或 Endpoint。": "Enter a host or endpoint.", "请选择 SQLite 文件。": "Choose a SQLite file.", "值超过 1 MiB，已截断显示。": "Value exceeds 1 MiB and is truncated.", "值超过 1 MiB，编辑内容已截断。为避免覆盖，禁止保存。": "Value exceeds 1 MiB and is truncated. Saving is disabled to prevent overwriting it.",
+	"停止 Watch": "Stop Watching", "写入数据…": "Write Data…", "写入目标：": "Write target: ", "准备请求并检查内容": "Prepare Request and Review Content", "分组": "Group",
+	"删除此键…": "Delete Key…", "加密连接，但不验证服务器证书。仅在信任网络环境中使用。": "Encrypts traffic without verifying the server certificate. Use only on a trusted network.",
+	"加载下一页": "Load Next Page", "加载更多值": "Load More Values", "加载更多对象": "Load More Objects", "取消 AI 请求": "Cancel AI Request", "取消 MongoDB 操作": "Cancel MongoDB Operation",
+	"取消 Redis 操作": "Cancel Redis Operation", "取消": "Cancel", "取消审阅": "Cancel Review", "取消导出": "Cancel Export", "取消查询": "Cancel Query", "变更 diff": "Change Diff",
+	"只读连接": "Read-only Connection", "只读": "Read-only", "处理中…": "Working…", "复制 AI 回答": "Copy AI Response",
+	"字段过多；树形预览最多显示 500 个节点。": "Too many fields; the tree preview shows up to 500 nodes.", "字符串值（最多显示 1 MiB）": "String value (up to 1 MiB)",
+	"导出结果": "Export Results", "导出为 CSV…": "Export as CSV…", "导出为 JSON…": "Export as JSON…", "导出": "Export",
+	"请选择导出文件保存位置…": "Choose where to save the export…", "已取消导出。": "Export canceled.",
+	"当前结果没有可导出的列。": "The current result has no columns to export.", "导出来源已变化，请重新选择结果后导出。": "The export source changed. Select the result again and retry.",
+	"密码（留空则保留已保存密码）": "Password (leave blank to keep the saved password)", "将草稿放入 SQL 编辑器": "Insert Draft into SQL Editor",
+	"已有 API key 保存在本机加密凭据库；配置文件只保存引用。":             "The API key is stored in the encrypted local credential vault; settings keep only a reference.",
+	"移除 key 前请先关闭 AI 并清除未保存的新 key；移除后 AI 也会保持关闭。 ": "Turn off AI and clear any unsaved key before removing the key. AI will remain off afterward.",
+	"开始 Watch 当前键/前缀": "Watch Current Key/Prefix", "当前值预览：": "Current value preview:", "按上次请求重新生成": "Regenerate Last Request",
+	"搜索": "Search", "放入 Mongo Filter 编辑器": "Insert into Mongo Filter Editor", "放入 Mongo Pipeline 编辑器": "Insert into Mongo Pipeline Editor",
+	"数据库 / Schema：": "Database / Schema: ", "数据库类型": "Database Type", "文档 ID · ": "Document ID · ", "文档 ID：": "Document ID: ",
+	"选择数据库 / Schema…":             "Select a database / schema…",
+	"文档超过 1 MiB，已截断为只读预览，不能提交替换。": "Document exceeds 1 MiB and is truncated to a read-only preview. Replacement is disabled.",
+	"新建文档": "New Document", "执行查询以加载文档。": "Run a query to load documents.", "查询文档": "Query Documents", "格式化 SQL": "Format SQL",
+	"清空 AI 内容": "Clear AI Content", "清空所有工作区及已保存历史": "Clear All Workspaces and Saved History", "清空此工作区历史": "Clear This Workspace's History",
+	"清除未保存 API key": "Clear Unsaved API Key", "生产环境：写操作会要求再次确认目标与语句。请核对连接信息。 ": "Production: write operations require a second confirmation of the target and statement. Verify the connection details.",
+	"生成内容仅作为草稿，不会自动执行。": "Generated content is a draft and never runs automatically.", "确认写入": "Confirm Write", "确认删除": "Confirm Delete",
+	"确认发送此请求": "Confirm and Send Request", "确认并执行此草稿": "Confirm and Run Draft", "确认并提交文档…": "Confirm and Save Document…",
+	"租约 TTL 暂不可用：": "Lease TTL unavailable: ", "租约已过期；键值等待服务端清理。 ": "Lease expired; the server will clean up this key.",
+	"端口": "Port", "类型筛选使用 SCAN TYPE（需 Redis 6.0+）；仍按游标扫描，不会一次性读取全库。": "Type filtering uses SCAN TYPE (Redis 6.0+). Scanning remains cursor-based and never reads the whole database at once.",
+	"索引": "Indexes", "索引读取失败：": "Failed to load indexes: ", "结果": "Results", "继续扫描": "Continue Scan",
+	"自定义 CA 只适用于 verify-full/verify-ca；请清空 CA 路径或切换 TLS 模式。 ": "A custom CA applies only to verify-full/verify-ca. Clear the CA path or change the TLS mode.",
+	"自定义 CA（可选，PEM 文件路径）":                                     "Custom CA (optional PEM file path)", "自定义 CA（可选，PEM 文件路径；追加到系统根证书）": "Custom CA (optional PEM path; added to system roots)",
+	"认证数据库": "Authentication Database", "该数据库暂无用户对象。此处显示表、视图、索引和触发器。": "No user objects in this database. Tables, views, indexes, and triggers appear here.",
+	"请求": "Request", "读取": "Load", "还没有保存的连接。": "No saved connections yet.", "连接": "Connect", "连接名称": "Connection Name",
+	"连接数据库后显示对象和列信息。": "Database objects and columns appear here after connecting.", "选择一个键查看类型、TTL 和分页值内容。": "Select a key to view its type, TTL, and paginated values.",
+	"集合 · ": "Collection · ", "集合": "Collections", "预览写入": "Preview Write", "预览删除影响": "Preview Delete Impact", "预览文档 diff": "Preview Document Diff",
+	"驱动待接入": "Driver Not Available Yet", "默认不发送 SQL、schema、错误、filter、键名、文档或配置值。所有上下文都要逐项勾选；请求前请检查内容。HTTP 仅允许 localhost provider。 ": "SQL, schema, errors, filters, key names, documents, and config values are not sent by default. Select each context explicitly and review it before sending. HTTP is allowed only for localhost providers.",
+	"默认关闭。开启后会把 SQL 文本、时间、行数和状态写入本机设置文件；SQL 可能包含敏感值。关闭会删除已保存历史。": "Off by default. When enabled, SQL text, time, row count, and status are stored in local settings. SQL may contain sensitive values. Turning this off deletes saved history.",
+	"在本机保存查询历史": "Save Query History Locally",
+	"显示技术详情":    "Show Technical Details", "隐藏技术详情": "Hide Technical Details", "新建连接": "New Connection", "编辑连接": "Edit Connection",
+	"AI 任务": "AI Task", "API key（仅存入本机加密凭据库）": "API key (stored only in the encrypted local credential vault)", "CA 证书路径": "CA Certificate Path",
+	"Lease ID（可选）": "Lease ID (optional)", "MongoDB 文档 JSON": "MongoDB Document JSON", "MongoDB 认证数据库": "MongoDB Authentication Database",
+	"Redis 键列表": "Redis Key List", "SQL 查询编辑器": "SQL Query Editor", "SQLite 文件路径": "SQLite File Path", "主机 / Endpoint": "Host / Endpoint",
+	"全选": "Select All", "取消全选": "Deselect All", "清除选择": "Clear Selection", "%d 个键": "%d keys", "已选择 %d 个键": "Selected %d keys", "删除所选键 (%d)": "Delete Selected Keys (%d)",
+	"平铺列表": "Flat List", "前缀分组": "Prefix Groups", "分组分隔符": "Group Separator", "选择分组": "Select Group", "取消删除": "Cancel Delete",
+	"新增 Redis 键": "Add Redis Key", "新增键": "Add Key", "键类型": "Type", "创建键": "Create Key", "搜索字段或值": "Search fields or values", "已加载 %d 项": "Loaded %d entries",
+	"添加条目": "Add Entry", "编辑条目": "Edit Entry", "操作 (Redis)": "Actions", "操作": "Actions", "Redis 字段": "Field", "成员": "Member", "字段 / 值": "Fields / Values", "分数": "Score",
+	"Redis 字符串": "String", "Redis 哈希": "Hash", "Redis 列表": "List", "Redis 集合": "Set", "Redis 有序集合": "Sorted Set",
+	"键名": "Key", "条目": "Entries", "条目 ID": "Entry ID", "JSON 值": "JSON Value", "值": "Value", "大小": "Size", "读取中": "Loading",
+	"永不过期": "Never Expires", "键已过期": "Expired", "已过期": "Expired", "未知": "Unknown", "保存值…": "Save Value…", "保存…": "Save…",
+	"过期时间": "Expiration", "正整数秒": "Positive integer seconds", "刷新键详情": "Refresh Key Details", "新增条目": "Add Entry",
+	"正在检测 RedisJSON…": "Checking RedisJSON…", "该 Redis 服务器未加载或未授权 RedisJSON 模块。": "RedisJSON is not loaded or permitted on this Redis server.",
+	"RedisJSON 可用；输入有效 JSON 文本。": "RedisJSON is available. Enter valid JSON text.", "Stream ID；输入 * 由 Redis 自动生成。": "Stream ID; enter * to let Redis generate one.",
+	"移除条目": "Remove Entry", "选择键": "Select key", "Redis 类型": "Type",
+	"批量删除 Redis 键": "Delete Redis Keys", "确认删除所选键？": "Delete the selected keys?", "正在批量删除 Redis 键…": "Deleting Redis keys…",
+	"正在新增 Redis 键…": "Creating Redis key…", "新增 Redis 键失败": "Failed to create Redis key", "批量删除 Redis 键失败": "Failed to delete Redis keys",
+	"写入 Redis 数据": "Write Redis Data", "确认执行下列操作？": "Run the following operation?", "确认创建这个 Redis 键？": "Create this Redis key?",
+	"确认删除这个 Redis 键？": "Delete this Redis key?", "删除 Redis 键失败": "Failed to delete Redis key", "写入 Redis 数据失败": "Failed to write Redis data",
+	"删除 Redis 键": "Delete Redis Key", "写入": "Write", "没有匹配的条目。": "No matching entries.",
+	"Redis 键名不能为空": "Redis key cannot be empty", "Redis 键已存在": "Redis key already exists. Select it to edit the value.", "TTL 秒数必须在 1 到 315360000 之间": "TTL must be between 1 and 315360000 seconds",
+	"请输入有效的 JSON": "Enter valid JSON", "此 Redis 服务器没有可用的 RedisJSON 模块": "RedisJSON is unavailable on this Redis server",
+	"列表项或集合成员不能为空": "List items and set members cannot be empty", "Sorted Set 成员不能为空": "Sorted Set members cannot be empty",
+	"Score 必须是有限数字": "Score must be a finite number", "至少填写一个条目": "Enter at least one entry", "字段名不能为空": "Field name cannot be empty",
+	"Redis 值不能超过 1 MiB": "Redis values cannot exceed 1 MiB", "Redis 值和字段不能超过 1 MiB": "Redis values and fields cannot exceed 1 MiB",
+	"元素值": "Element Value", "字段名": "Field Name", "最近打开的 SQLite 文件": "Recently Opened SQLite Files",
+	"查询工作区": "Query Workspaces", "查询结果": "Query Results", "查询结果面板": "Query Results Panel", "连接分组": "Connection Group", "连接环境": "Connection Environment",
+	"键前缀 / 匹配模式": "Key Prefix / Match Pattern", "键或前缀": "Key or Prefix", "键类型筛选": "Key Type Filter",
+	"0 表示不绑定新 lease": "0 means do not attach a new lease", "SQLite 数据库文件路径": "SQLite database file path",
+	"SQLite 文件路径（例如 /Users/me/data.db）": "SQLite file path (for example /Users/me/data.db)", "例如：本地开发库": "For example: Local development",
+	"写下你的问题或目标，也可从上方插入模板": "Describe your question or goal, or insert a template above", "前缀或 MATCH 模式，例如 cache:*": "Prefix or MATCH pattern, for example cache:*",
+	"留空从当前开始；或输入起始 revision": "Leave blank to start now, or enter a starting revision", "留空使用系统根证书": "Leave blank to use system root certificates",
+	"留空保留已保存 key": "Leave blank to keep the saved key", "留空浏览全部；例如 /services/": "Leave blank to browse all; for example /services/",
+	"输入字符串值": "Enter a string value", "添加或更新的元素": "Element to add or update", "默认端口": "Default port",
+	"0": "0", "HTTPS endpoint": "HTTPS endpoint", "Model": "Model", "MongoDB aggregation pipeline JSON": "MongoDB aggregation pipeline JSON",
+	"MongoDB filter JSON": "MongoDB filter JSON", "MongoDB projection JSON": "MongoDB projection JSON", "Redis DB 索引": "Redis DB Index",
+	"Score": "Score", "TLS 模式": "TLS Mode", "TTL 秒数": "TTL (seconds)", "Value": "Value", "admin（可选）": "admin (optional)",
+	"etcd 键列表": "etcd Key List", "https://provider.example/v1/chat/completions": "https://provider.example/v1/chat/completions",
+	"不会写入配置文件": "Not saved in the settings file", "可选": "Optional", "字符串值": "String Value", "已保存的数据库连接": "Saved Database Connections",
+	"应用提示模板": "Apply Prompt Template", "待确认内容已变化，请重新预览写入。 ": "The content to confirm has changed. Preview the write again.",
+	"打开设置…": "Open Settings…", "执行查询后，结果会按页显示在这里。": "Run a query to see results here, one page at a time.",
+	"提示": "Prompt", "提示模板": "Prompt Template", "数据库 / Schema": "Database / Schema",
+	"数据库 · ": "Database · ", "数据库名称": "Database Name", "数据库对象": "Database Objects", "未返回索引信息。 ": "No index information returned.",
+	"未连接": "Not Connected", "未限定表名、函数和类型会按此 schema 的 search_path 解析。选择共享 schema 前请确认其创建者可信。": "Unqualified tables, functions, and types resolve through this schema's search_path. Verify who controls a shared schema before selecting it.",
+	"查询列": "Query Columns", "模型名称": "Model Name", "正在读取租约 TTL…": "Loading lease TTL…", "正在读取索引…": "Loading indexes…",
+	"此键未绑定租约。 ": "This key has no lease.", "此页没有元素。可能需要继续分页或键已被并发修改。": "This page is empty. Load another page or check whether the key changed concurrently.",
+	"浏览…": "Browse…", "消息": "Messages", "环境": "Environment", "用户名": "Username", "目标：": "Target: ",
+	"本机加密凭据库中已有密码": "A password is saved in the encrypted local credential vault", "起始 revision": "Starting Revision", "连接密码": "Connection Password", "显示密码": "Show password", "隐藏密码": "Hide password",
+	"键值":   "Key Value",
+	"删除连接": "Delete Connection", "删除连接…": "Delete Connection…", "复制连接": "Copy Connection", "连接管理": "Connection Management", "打开 SQLite 文件": "Open SQLite File", "打开连接": "Open Connection",
+	"确定删除连接‘%s’吗？": "Delete the connection '%s'?", "此操作会从本机移除已保存的连接配置。": "This removes the saved connection profile from this device.",
+	"新建 SQLite 文件": "New SQLite File", "SQLite 文件已创建。": "SQLite file created.", "新建 SQLite 文件失败": "Failed to create SQLite file", "检查连接": "Check Connection", "测试连接": "Test Connection", "测试连接失败": "Connection test failed", "浏览 SQLite 文件…": "Browse SQLite Files…",
+	"正在保存外观设置…": "Saving appearance preference…", "保存外观设置失败": "Failed to save appearance preference", "外观设置已保存。": "Appearance preference saved.",
+	"就绪 · 纯 Go SQLite 工作区":                               "Ready · Pure Go SQLite workbench",
+	"AI Filter 草稿已填入；检查 JSON 后再查询。":                      "AI filter draft inserted. Review the JSON before querying.",
+	"AI Pipeline 草稿已填入；检查 JSON 后再查询。写集合阶段会被 adapter 拒绝。": "AI pipeline draft inserted. Review the JSON before querying. Write stages are rejected by the adapter.",
+	"AI 回答已复制到系统剪贴板。 ":                                   "AI response copied to the clipboard.",
+	"AI 草稿已放入 SQL 编辑器；执行前必须确认连接、语句和风险。":                  "AI draft inserted into the SQL editor. Confirm the connection, statement, and risks before running it.",
+	"AI 草稿已生成；检查内容后再放入编辑器。":                              "AI draft generated. Review it before inserting it into an editor.",
+	"AI 草稿已编辑，请先重新审阅目标、语句与风险。":                           "The AI draft has changed. Review the target, statement, and risks again.",
+	"AI 设置已保存；provider 请求仍需用户手动发起。":                      "AI settings saved. Provider requests still require your confirmation.",
+	"AI 请求已取消。":    "AI request canceled.",
+	"MongoDB 已连接。": "Connected to MongoDB.", "MongoDB 数据库已切换。": "MongoDB database changed.", "MongoDB 文档已提交。": "MongoDB document saved.",
+	"MongoDB 文档详情已加载。": "MongoDB document details loaded.", "MongoDB 文档详情读取已取消。": "MongoDB document detail read canceled.",
+	"MongoDB 文档读取已取消。": "MongoDB document read canceled.", "MongoDB 索引读取已取消。": "MongoDB index read canceled.",
+	"MongoDB 连接已取消。": "MongoDB connection canceled.", "MongoDB 连接配置测试成功。": "MongoDB connection profile test succeeded.",
+	"MongoDB 集合读取已取消。": "MongoDB collection read canceled.",
+	"Redis 值已继续读取。":    "Redis value read continued.", "Redis 值读取已取消。": "Redis value read canceled.",
+	"Redis 已连接，已加载一页 SCAN 结果。": "Connected to Redis and loaded one page of SCAN results.",
+	"Redis 数据已写入。":             "Redis data written.", "Redis 连接已取消。": "Redis connection canceled.",
+	"Redis 连接配置测试成功。": "Redis connection profile test succeeded.", "Redis 键已删除。": "Redis key deleted.",
+	"Redis 键扫描已取消。": "Redis key scan canceled.", "Redis 键详情已更新。": "Redis key details updated.", "Redis 键读取已取消。": "Redis key read canceled.",
+	"SQL 已格式化。": "SQL formatted.", "SQL 执行完成 · 此语句没有返回结果集": "SQL completed · This statement returned no result set",
+	"SQL 语句为空。": "SQL statement is empty.", "SQLite 已以只读方式连接。": "Connected to SQLite in read-only mode.",
+	"SQLite 已连接。": "Connected to SQLite.", "SQLite 连接配置测试成功。": "SQLite connection profile test succeeded.",
+	"TLS 文件将在保存配置时加密写入本机凭据库。": "TLS files will be encrypted and saved in the local credential vault when you save the profile.", "本机凭据库已有客户端证书": "A client certificate is saved in the local credential vault", "本机凭据库已有客户端私钥": "A client private key is saved in the local credential vault",
+	"选择客户端证书…": "Choose Client Certificate…", "更换客户端证书…": "Replace Client Certificate…", "选择客户端私钥…": "Choose Client Private Key…", "更换客户端私钥…": "Replace Client Private Key…",
+	"etcd Watch 已停止。": "etcd watch stopped.", "etcd Watch 已停止并返回错误。": "etcd watch stopped with an error.",
+	"etcd 已连接，已加载一页键。": "Connected to etcd and loaded one page of keys.", "etcd 连接已取消。": "etcd connection canceled.",
+	"etcd 连接配置测试成功。":    "etcd connection profile test succeeded.",
+	"写入内容已更改，请重新预览并确认。": "The write content changed. Preview and confirm it again.",
+	"后续结果读取已取消。":        "Fetching more results canceled.", "导出已取消，临时文件已清理。": "Export canceled; temporary files were removed.",
+	"已丢弃未发送的 AI 请求预览。": "Unsent AI request preview discarded.", "已关闭工作区。": "Workspace closed.",
+	"已准备按上次已审核的消息重新生成；再次检查 payload 并确认后才会发送。": "Ready to regenerate from the last reviewed messages. Review the payload and confirm before sending.",
+	"已切换工作区；前一查询已读取部分仍保留，未读取部分已停止。":           "Workspace switched. Previously fetched rows are kept; remaining rows were not fetched.",
+	"已加载 etcd 键详情。": "etcd key details loaded.", "已取消 SQL 写操作。": "SQL write canceled.", "已取消 SQL 执行。": "SQL execution canceled.",
+	"已取消新建文件。": "New file creation canceled.", "已取消选择 SQLite 文件。": "SQLite file selection canceled.", "已取消选择文件。": "File selection canceled.",
+	"已复制配置内容；保存后会创建新的连接配置。":        "Connection settings copied. Save to create a new profile.",
+	"已将提示模板填入编辑区；可继续修改。":           "Prompt template inserted. You can continue editing it.",
+	"已清空 AI 请求、预览和回答内容。":           "AI request, preview, and response cleared.",
+	"已选择 SQLite 连接文件；保存配置后可测试或打开。": "SQLite connection file selected. Save the profile to test or open it.",
+	"当前工作区的查询历史已清空。":               "Query history for this workspace cleared.",
+	"当前结果没有可导出的 SQL。":              "There is no SQL to export for the current results.",
+	"所有工作区和已保存的查询历史已清空。":           "Query history for all workspaces and saved history cleared.",
+	"数据库连接已关闭。":                    "Database connection closed.", "文档没有变化。": "The document has not changed.",
+	"未保存的 AI API key 已清除。 ":     "Unsaved AI API key cleared.",
+	"查询历史仅保留到本次运行结束；磁盘上的历史已删除。": "Query history will be kept until this session ends; saved history was deleted.",
+	"查询历史将保存在本机设置文件中。":          "Query history will be saved in local settings.",
+	"查询已取消。":                "Query canceled.",
+	"正在使用 SCAN 读取 Redis 键…": "Scanning Redis keys…", "正在保存连接配置…": "Saving connection profile…",
+	"正在停止当前工作区的后续结果读取…": "Stopping further result reads in the current workspace…", "正在加载下一页…": "Loading the next page…",
+	"正在关闭数据库连接…": "Closing database connection…", "正在删除连接配置…": "Deleting connection profile…",
+	"正在加载更多数据库对象…": "Loading more database objects…", "正在只读重跑查询并导出完整结果…": "Rerunning the query read-only and exporting all results…",
+	"正在后台打开 SQLite 文件…": "Opening SQLite file in the background…", "正在执行查询…": "Running query…",
+	"正在检查数据库连接…": "Checking database connection…", "正在测试 MongoDB 连接…": "Testing MongoDB connection…",
+	"正在测试 Redis 连接…": "Testing Redis connection…", "正在测试 SQLite 连接配置…": "Testing SQLite connection profile…",
+	"正在测试 etcd 连接…": "Testing etcd connection…", "正在请求 AI…": "Requesting AI…",
+	"正在读取 MongoDB 文档…": "Reading MongoDB documents…", "正在读取 MongoDB 文档详情…": "Reading MongoDB document details…",
+	"正在读取 MongoDB 集合…": "Reading MongoDB collections…", "正在读取 Redis 键…": "Reading Redis keys…",
+	"正在读取 etcd 键…": "Reading etcd keys…", "正在读取表结构…": "Reading table schema…",
+	"读取表结构失败：": "Failed to read table structure: ", "没有列信息。 ": "No column information was returned. ",
+	"正在提交表格修改…": "Saving table changes…", "已取消表格修改。": "Table changes canceled.", "表格修改已提交。": "Table changes saved.",
+	"单元格修改已暂存；提交前不会写入数据库。": "Cell edit staged. It will not be written until you save changes.",
+	"新增行已加入待提交修改。":         "New row staged for saving.", "删除行已加入待提交修改。": "Row deletion staged for saving.",
+	"每批最多暂存 %d 项修改。": "You can stage up to %d changes per batch.",
+	"准备表格修改失败":       "Failed to prepare table changes", "提交表格修改失败": "Failed to save table changes",
+	"当前数据结果属于另一连接；切换回来源连接后才能刷新或打开查询。 ": "These results belong to another connection. Switch back to the source connection to refresh or open a query. ",
+	"连接已关闭": "Connection closed", "重新连接": "Reconnect",
+	"正在连接 MongoDB…": "Connecting to MongoDB…", "正在连接 Redis…": "Connecting to Redis…", "正在连接 etcd…": "Connecting to etcd…",
+	"结果来自另一 SQLite 文件；请先重新打开来源文件，再导出。": "These results came from another SQLite file. Reopen the source file before exporting.",
+	"结果来自另一连接；请先重新连接来源数据库，再导出。":        "These results came from another connection. Reconnect to the source database before exporting.",
+	"请先审阅 AI 草稿并明确确认执行。":               "Review the AI draft and explicitly confirm before running it.",
+	"请先打开数据库文件或连接数据库。":                 "Open a database file or connect to a database first.", "请关闭只读模式后再新建 SQLite 文件。": "Turn off read-only mode before creating a SQLite file.",
+	"请求尚未发送。检查下方实际消息内容与目标 provider 后，再确认发送。": "Request not sent. Review the messages and target provider below, then confirm to send.",
+	"请输入 SQLite 文件路径。":   "Enter a SQLite file path.",
+	"请选择新 SQLite 文件的位置…": "Choose where to create the SQLite file…", "请选择要打开的 SQLite 文件…": "Choose a SQLite file to open…",
+	"请选择连接配置使用的 SQLite 文件…": "Choose the SQLite file for this connection profile…",
+	"连接健康检查已取消。":            "Connection health check canceled.", "连接健康检查超时。": "Connection health check timed out.",
+	"连接配置已保存。": "Connection profile saved.", "连接配置已删除。": "Connection profile deleted.", "连接配置操作": "Connection profile actions",
+	"切换到此连接": "Switch to This Connection", "打开示例查询": "Open Example Query", "实例信息": "Instance Info", "数据库信息": "Database Info",
+	"刷新": "Refresh", "扫描键": "Scan Keys", "编辑数据库别名": "Edit Database Alias", "设置数据库别名": "Set Database Alias", "数据库别名": "Database Alias", "留空则显示默认 db 编号": "Leave blank to show the default db index", "设为默认数据库": "Set as Default Database", "清空当前 DB…": "Clear Current DB…", "切换到此 DB": "Switch to This DB",
+	"浏览对象": "Browse Object", "查看数据": "View Data", "查看前 100 行": "View First 100 Rows", "查看结构": "View Structure", "切换到此数据库 / Schema": "Switch to This Database / Schema",
+	"该 DB 尚未打开；使用右键菜单切换到此 DB。 ": "This DB is not open. Use its context menu to switch to it. ",
+	"Redis 默认数据库已设为 db%d。":      "Redis default database set to db%d.", "数据库对象已刷新。": "Database objects refreshed.", "MongoDB 数据库列表已刷新。": "MongoDB database list refreshed.", "Redis DB 已清空。": "Redis DB cleared.",
+	"将永久删除当前逻辑数据库中的 %d 个键。此操作无法撤销。": "Permanently delete %d keys from the current logical database. This cannot be undone.",
+	"清空 Redis DB": "Clear Redis DB", "确认清空当前 Redis DB？": "Clear the current Redis DB?", "清空": "Clear", "保存": "Save", "Redis 数据库别名已保存。": "Redis database alias saved.", "保存 Redis 数据库别名失败": "Failed to save Redis database alias",
+	"已切换到 ": "Switched to ", "正在测试 ": "Testing ", "正在连接 ": "Connecting to ", "请选择 etcd ": "Choose an etcd ",
+	"键": "Keys", "用户与角色": "Users & Roles", "服务仪表盘": "Service Dashboard",
+	"使用聚合管道": "Use aggregation pipeline", "显示可折叠 JSON 字段树": "Show collapsible JSON field tree", "保存时移除已保存密码": "Remove saved password when saving",
+	"以只读模式打开": "Open in read-only mode", "收藏": "Favorite",
+	"明确发送当前 SQL 编辑器内容":                                  "Explicitly include the current SQL editor contents",
+	"明确发送当前错误摘要和技术详情":                                   "Explicitly include the current error summary and technical details",
+	"明确发送当前选中对象的 schema/列元数据":                           "Explicitly include schema and column metadata for the selected object",
+	"明确发送当前数据库/集合及 filter/projection/pipeline 文本（不含文档）": "Explicitly include the current database, collection, and filter/projection/pipeline text (excluding documents)",
+	"明确发送当前 Redis 键的类型/TTL/长度（不含值）":                     "Explicitly include the current Redis key type, TTL, and length (excluding its value)",
+	"明确发送当前 etcd 键的修订/版本/Lease TTL 元数据（不含值）":            "Explicitly include revision, version, and lease TTL metadata for the current etcd key (excluding its value)",
+	"%s 使用系统根证书和可选自定义 CA 验证证书链及主机名；不支持客户端证书。":           "%s verifies the certificate chain and hostname with system roots and an optional custom CA; client certificates are not supported.",
+	"%s 使用系统根证书和可选自定义 CA 验证证书链，但不验证主机名；不支持客户端证书。":       "%s verifies the certificate chain with system roots and an optional custom CA, but does not verify the hostname; client certificates are not supported.",
+	"（嵌套超过 %d 层）": "(nested deeper than %d levels)",
+	"历史 (%d)":     "History (%d)", "%d 行 · %s · %s": "%d rows · %s · %s",
+	"执行中": "Running", "失败": "Failed", "已取消": "Canceled", "超时": "Timed out", "已停止": "Stopped", "完成": "Completed",
+	"解释 SQL": "Explain SQL", "解释错误": "Explain Error", "生成 Mongo Filter": "Generate Mongo Filter", "生成 Mongo Pipeline": "Generate Mongo Pipeline", "Redis 操作建议": "Redis Guidance", "etcd 操作建议": "etcd Guidance",
+	"空白提示": "Blank Prompt", "解释查询与风险": "Explain Query and Risks", "排查错误": "Troubleshoot Error", "生成只读 Filter": "Generate Read-only Filter", "生成只读 Pipeline": "Generate Read-only Pipeline", "评估 Redis 操作": "Assess Redis Operation", "评估 etcd 操作": "Assess etcd Operation", "生成只读 SQL": "Generate Read-only SQL",
+	"请解释这段 SQL 的主要行为、涉及对象、可能的副作用和需要确认的假设。不要改写或执行它。":                                     "Explain what this SQL does, which objects it touches, its possible side effects, and what assumptions need verification. Do not rewrite or execute it.",
+	"请根据我提供的错误信息列出最可能的原因、验证步骤和低风险修复建议。请区分事实与推测，不要假设你已连接数据库。":                            "Based on the error I provide, list the most likely causes, verification steps, and low-risk fixes. Distinguish facts from guesses, and do not assume you are connected to the database.",
+	"请根据我的筛选目标生成 MongoDB Extended JSON filter。只输出 filter 对象，不包含写入、删除或聚合阶段。":             "Create a MongoDB Extended JSON filter for my criteria. Output only the filter object; do not include writes, deletes, or aggregation stages.",
+	"请根据我的分析目标生成只读 MongoDB aggregation pipeline JSON 数组。不要包含 $out 或 $merge，并简要说明各阶段用途。": "Create a read-only MongoDB aggregation pipeline JSON array for my analysis goal. Do not include $out or $merge, and briefly explain each stage.",
+	"请根据我的目标给出 Redis 数据类型、读取/写入方式、TTL 影响和风险说明。只提供建议，不输出可直接自动执行的命令。":                     "Recommend a Redis data type and explain how to read or write it, the TTL impact, and the risks. Give guidance only; do not provide commands for automatic execution.",
+	"请根据我的目标给出 etcd 精确键或前缀方案、revision/并发影响和删除风险。只提供建议，不执行操作。":                           "Recommend an exact-key or prefix approach for etcd, and explain revision/concurrency effects and deletion risks. Give guidance only; do not perform operations.",
+	"请根据我的目标生成可供人工检查的只读 SQL，优先使用 SELECT。列出关键假设和可能影响结果的边界条件，不要生成 DDL 或批量写入语句。":           "Draft read-only SQL for manual review, preferably using SELECT. List key assumptions and edge cases that could affect the results. Do not generate DDL or bulk write statements.",
+	"正在读取 Redis DB 键数量…": "Counting keys in the Redis DB…", "正在清空 Redis DB…": "Clearing the Redis DB…", "正在写入 Redis 数据…": "Writing Redis data…",
+	"表结构已加载。": "Table structure loaded.", "此工作区所属的连接已关闭。 ": "The connection for this workspace has been closed. ",
+	"连接已切换，表格修改没有提交。 ": "The connection changed; table edits were not saved. ", "etcd 已连接。": "Connected to etcd.", "已切换到连接：": "Switched to connection: ",
+	"不可编辑": "Not editable", "写入 NULL": "Write NULL", "新行": "New row", "自动生成": "Generated automatically", "点击改回默认值；右键可选择单元格状态": "Click to restore the default; right-click to choose the cell value state", "默认值": "Default value", "正在读取表字段…": "Loading table columns…", "读取表字段失败：": "Failed to load table columns: ",
+	"AI 请求失败": "AI request failed", "AI 请求未准备": "AI request is not ready", "AI 请求未发送": "AI request was not sent",
+	"MongoDB 查询失败": "MongoDB query failed", "Redis 键扫描失败": "Redis key scan failed", "etcd 写入失败": "etcd write failed", "保存 AI API key 失败": "Failed to save AI API key", "保存 AI 设置失败": "Failed to save AI settings",
+	"保存 MongoDB 文档失败": "Failed to save MongoDB document", "保存 Redis 默认数据库失败": "Failed to save the default Redis database", "保存 etcd 客户端私钥失败": "Failed to save the etcd client private key", "保存 etcd 客户端证书失败": "Failed to save the etcd client certificate",
+	"保存查询历史失败": "Failed to save query history", "保存查询历史设置失败": "Failed to save query history settings", "保存窗口布局失败": "Failed to save window layout", "保存系统凭据失败": "Failed to save system credential", "保存连接配置失败": "Failed to save connection profile",
+	"关闭数据库连接失败": "Failed to close database connection", "关闭查询游标失败": "Failed to close query cursor", "写入 etcd 失败": "Failed to write to etcd", "初始化本机凭据存储失败": "Failed to initialize the local credential vault",
+	"删除 etcd 键失败": "Failed to delete etcd key", "删除连接配置失败": "Failed to delete connection profile", "刷新 MongoDB 数据库失败": "Failed to refresh MongoDB databases", "刷新数据库对象失败": "Failed to refresh database objects", "加载数据库对象失败": "Failed to load database objects",
+	"加载本地偏好设置失败": "Failed to load local preferences", "启动 Watch 失败": "Failed to start watch", "导出失败": "Export failed", "已连接，但无法保存最近文件设置": "Connected, but could not save the recent file setting", "应用表结构失败": "Failed to apply table structure changes",
+	"打开 SQLite 失败": "Failed to open SQLite", "提交 MongoDB 文档失败": "Failed to commit MongoDB document", "数据库正忙": "Database is busy", "文件选择失败": "File selection failed", "无法切换数据库 / Schema": "Failed to switch database / schema",
+	"查询失败": "Query failed", "格式化 SQL 失败": "Failed to format SQL", "格式化失败": "Formatting failed", "清空 Redis DB 失败": "Failed to clear the Redis DB", "继续读取 Redis 值失败": "Failed to continue reading Redis value",
+	"读取 AI API key 失败": "Failed to read AI API key", "读取 MongoDB 文档失败": "Failed to read MongoDB document", "读取 MongoDB 集合失败": "Failed to read MongoDB collections", "读取 Redis 键失败": "Failed to read Redis key", "读取 etcd 键失败": "Failed to read etcd key", "读取 etcd 键详情失败": "Failed to read etcd key details",
+	"读取表结构失败": "Failed to read table structure", "读取连接资源失败": "Failed to read connection resources", "连接健康检查失败": "Connection health check failed", "连接已保存，但旧凭据未能清理": "Connection saved, but the old credential could not be removed", "连接已删除，但凭据清理未完成": "Connection deleted, but credential cleanup did not complete",
+	"连接 MongoDB 失败": "Failed to connect to MongoDB", "连接 Redis 失败": "Failed to connect to Redis", "连接 etcd 失败": "Failed to connect to etcd", "选择 SQLite 连接文件失败": "Failed to select the SQLite connection file", "选择 etcd TLS 文件失败": "Failed to select the etcd TLS file", "选择导出文件位置失败": "Failed to choose an export file location", "选择新文件位置失败": "Failed to choose a new file location", "预览 etcd 删除失败": "Failed to preview etcd deletion",
+	"无当前选中对象；请从完整 SQL 核对影响对象":                             "No object is selected; review the SQL to verify its targets",
+	"环境：%s\n驱动：%s\n连接：%s\n当前选中对象：%s\n类型估计：%s\n\nSQL：\n%s": "Environment: %s\nDriver: %s\nConnection: %s\nSelected object: %s\nRisk estimate: %s\n\nSQL:\n%s",
+	"复制单元格": "Copy Cell", "复制整行": "Copy Row",
+	"… 其余 %d 项未展开": "… %d more changes are not shown",
+	"环境：%s\n连接：%s\n数据库：%s\n集合：%s\n文档 ID：%s\n\n%s": "Environment: %s\nConnection: %s\nDatabase: %s\nCollection: %s\nDocument ID: %s\n\n%s",
+	"+ 新文档": "+ New Document", "- 原文": "- Original Document", "没有检测到修改。": "No changes detected.",
+}
+
+var etcdEnglishUI = map[string]string{
+	"键": "Keys", "用户与角色": "Users & Roles", "服务仪表盘": "Service Dashboard",
+	"全局搜索": "Global Search", "维护": "Maintenance", "监视器": "Monitor", "同步": "Sync", "Key": "Key",
+	"etcd 同步暂不可用": "etcd sync is not available yet", "搜索所有 Key": "Search all Keys", "全局搜索 etcd 键": "Search etcd Keys Globally",
+	"导出 etcd 键": "Export etcd Keys", "导入 etcd 键": "Import etcd Keys", "打开": "Open", "导入": "Import",
+	"存在超过 1 MiB 的值，无法完整导出。": "A value exceeds 1 MiB and cannot be exported completely.",
+	"请选择 etcd 键导出文件的位置…":    "Choose where to save the etcd key export…", "正在导出已加载的 etcd 键…": "Exporting loaded etcd keys…",
+	"导出来源已变化，文件未关联当前连接。": "The source connection changed during export.", "导出文件已完整生成到 %s，但目录同步失败。": "The export was written to %s, but syncing the directory failed.",
+	"已导出 %d 个已加载的 Key 到 %s。": "Exported %d loaded keys to %s.", "请选择要导入的 etcd JSON 文件…": "Choose an etcd JSON file to import…",
+	"读取 etcd 导入文件失败": "Failed to read the etcd import file", "导入文件中没有 Key。": "The import file contains no keys.",
+	"将以仅创建方式导入 Key；已存在的 Key 不会被覆盖。": "Keys will be imported in create-only mode; existing keys will not be overwritten.",
+	"导入 Key 数量：%d\n\n": "Keys to import: %d\n\n", "… 另有 %d 个 Key": "… and %d more keys",
+	"导入 etcd 键中止": "etcd key import stopped", "正在安全导入 etcd 键…": "Safely importing etcd keys…",
+	"导出 etcd 键失败": "Failed to export etcd keys", "导入 etcd 键失败": "Failed to import etcd keys", "已取消导入。": "Import canceled.",
+	"已导入 %d/%d 个 Key 后遇到错误：": "Import stopped after %d of %d keys: ",
+	"已安全导入 %d 个 etcd Key。":   "Safely imported %d etcd keys.",
+	"整理成员后端数据库并查看或解除集群告警。 ":  "Defragment member backends and inspect or disarm cluster alarms. ", "刷新维护状态": "Refresh Maintenance Status",
+	"etcd Key": "etcd Keys", "etcd 用户与角色": "etcd Users & Roles", "etcd 服务仪表盘": "etcd Dashboard",
+	"集群概览": "Cluster Overview", "采集于 %s": "Sampled at %s", "刷新仪表盘": "Refresh Dashboard",
+	"可访问成员数仅表示当前客户端能够读取的成员状态，不代表 etcd 集群 Quorum 健康检查。": "Accessible members only indicate which member statuses this client can read; this is not an etcd quorum health check.",
+	"正在读取集群状态…": "Loading cluster status…", "读取仪表盘失败：": "Failed to load dashboard: ",
+	"客户端可访问成员": "Client Accessible Members", "客户端可访问端点": "Client Accessible Endpoints", "Leader ID": "Leader ID", "Key revision": "Key Revision", "告警数": "Alarms",
+	"集群 ID": "Cluster ID", "etcd 版本": "etcd Version", "未启用": "Disabled", "已启用": "Enabled", "不可读取": "Unavailable",
+	"认证": "Authentication", "认证 revision": "Auth Revision", "读取成员列表失败：": "Failed to list members: ", "端点 / 成员": "Endpoints / Members",
+	"没有返回成员信息。 ": "No member information was returned. ", "不可访问": "Unreachable", "可访问": "Reachable",
+	"整理此成员后端数据库": "Defragment This Member", "版本 %s · Leader %d · revision %d · Raft term %d · index %d / applied %d": "Version %s · Leader %d · revision %d · Raft term %d · index %d / applied %d",
+	"后端已用 %s / 数据库大小 %s / 配额 %s": "Backend in use %s / database size %s / quota %s", "读取状态失败：": "Failed to read status: ",
+	"客户端 URL：": "Client URLs: ", "集群告警": "Cluster Alarms", "读取告警失败：": "Failed to read alarms: ", "当前没有活动告警。 ": "No active alarms. ",
+	"请求解除告警": "Request Alarm Disarm", "Prometheus 运行指标": "Prometheus Runtime Metrics", "指标端点暂不可用。 ": "Metrics endpoint is unavailable. ",
+	"指标来自 etcd /metrics；速率类数据需比较两次采样。 ": "Metrics are read from etcd /metrics. Rate metrics require comparing two samples. ",
+	"运行时长": "Uptime", "后端使用率": "Backend Usage", "驻留内存": "Resident Memory", "Goroutine": "Goroutines",
+	"Leader 变更累计": "Leader Changes", "待处理 Proposal": "Pending Proposals", "失败 Proposal": "Failed Proposals", "gRPC 失败累计": "gRPC Failures",
+	"访问控制": "Access Control", "认证状态未知": "Authentication status unknown", "认证已启用": "Authentication enabled", "认证未启用": "Authentication disabled",
+	"读取认证状态失败：": "Failed to read authentication status: ", "读取 etcd 用户失败": "Failed to read etcd user", "读取 etcd 角色失败": "Failed to read etcd role",
+	"刷新用户与角色": "Refresh Users & Roles", "启用认证": "Enable Authentication", "关闭认证": "Disable Authentication",
+	"正在读取 etcd 用户和角色…": "Loading etcd users and roles…", "读取用户与角色失败：": "Failed to load users and roles: ",
+	"用户": "Users", "角色": "Roles", "etcd 用户列表": "etcd Users", "etcd 角色列表": "etcd Roles", "%d 个用户": "%d users", "%d 个角色": "%d roles",
+	"新建 etcd 用户": "Create etcd User", "读取用户失败：": "Failed to list users: ", "密码": "Password", "创建用户": "Create User",
+	"选择一个用户查看角色和操作": "Select a user to view roles and actions", "删除用户": "Delete User", "正在读取用户详情…": "Loading user details…",
+	"已授予角色": "Granted Roles", "此用户尚未关联角色。 ": "This user has no assigned roles. ", "撤销角色": "Revoke Role", "授予角色": "Grant Role",
+	"关联角色": "Assign Role", "修改密码": "Change Password", "新密码": "New Password", "新建 etcd 角色": "Create etcd Role", "读取角色失败：": "Failed to list roles: ",
+	"角色名称": "Role Name", "创建角色": "Create Role", "选择一个角色查看权限": "Select a role to view permissions", "删除角色": "Delete Role",
+	"正在读取角色详情…": "Loading role details…", "键权限": "Key Permissions", "此角色没有显式键权限。 ": "This role has no explicit key permissions. ",
+	"撤销键权限": "Revoke Key Permission", "添加键权限": "Add Key Permission", "精确键": "Exact Key", "键前缀": "Key Prefix", "范围": "Scope", "权限": "Permission", "授予权限": "Grant Permission",
+	"输入键或前缀并搜索。 ": "Enter a key or prefix and search. ", "搜索 etcd 键": "Search etcd Keys", "前缀": "Prefix", "搜索键": "Search Keys", "新键": "New Key",
+	"预览新键": "Preview New Key", "正在读取 etcd 键…": "Loading etcd keys…", "选择一个键查看值": "Select a key to view its value",
+	"刷新 etcd 键": "Refresh etcd Keys", "新建 etcd 键": "Create etcd Key", "继续读取下一页": "Load Next Page",
+	"键名，例如 /services/api": "Key, e.g. /services/api", "有效期策略": "Expiration Policy", "长期有效": "Never Expires", "不绑定租约，Key 不自动过期": "No lease attached; this key will not expire automatically",
+	"租约": "Leases", "etcd 租约": "etcd Leases", "etcd 租约列表": "etcd Leases", "租约到期后，其附着 Key 会自动删除。": "Keys attached to a lease are deleted when it expires.",
+	"授予租约": "Grant Lease", "刷新租约": "Refresh Leases", "%d 个租约": "%d leases", "正在读取 etcd 租约…": "Loading etcd leases…", "读取 etcd 租约失败：": "Failed to load etcd leases: ",
+	"当前会话没有已知 Lease": "No known leases in this session", "Lease ID %d": "Lease ID %d", "%d 秒": "%d sec", "正在读取租约详情…": "Loading lease details…", "读取租约详情失败：": "Failed to load lease details: ",
+	"选择 Lease 查看详情": "Select a lease to view its details", "剩余 TTL": "Remaining TTL", "授予 TTL": "Granted TTL", "附着 Key": "Attached Keys", "撤销租约…": "Revoke Lease…", "附着的 Key": "Attached Keys",
+	"此租约当前没有附着 Key。 ": "No keys are currently attached to this lease. ", "仅显示前 %d 个 Key。": "Showing the first %d keys.", "创建一个独立的租约，之后可将新 Key 绑定到此 Lease ID。": "Create a lease now, then attach new keys to its Lease ID.",
+	"可在顶栏租约页面创建租约并查看 Lease ID。": "Open the Leases tab above to create leases and view their IDs.", "当前连接不支持租约管理。": "This connection does not support lease management.",
+	"将创建一个 %d 秒后到期的租约。": "Create a lease that expires in %d seconds.", "授予 etcd 租约": "Grant etcd Lease", "确认创建此租约？": "Create this lease?", "授予": "Grant", "正在授予 etcd 租约…": "Granting etcd lease…", "etcd 租约已创建：Lease ID %d": "etcd lease created: Lease ID %d", "授予 etcd 租约失败": "Failed to grant etcd lease",
+	"撤销 etcd 租约": "Revoke etcd Lease", "撤销 etcd 租约失败": "Failed to revoke etcd lease", "Lease ID：%d": "Lease ID: %d", "附着 Key 数：%d": "Attached keys: %d", "撤销后，租约上的所有 Key 都会被立即删除。": "Revoking this lease immediately deletes every key attached to it.", "还有 %d 个 Key 未显示。": "%d more keys are not shown.",
+	"确认撤销此租约？": "Revoke this lease?", "撤销租约": "Revoke Lease", "正在撤销 etcd 租约…": "Revoking etcd lease…", "etcd 租约已撤销。": "etcd lease revoked.",
+	"设置 TTL": "Set TTL", "按指定秒数自动过期": "Expire after the specified number of seconds", "绑定租约": "Attach Existing Lease", "使用已有 Lease ID": "Use an existing lease ID",
+	"TTL 秒数": "TTL (seconds)", "输入已有 Lease ID": "Enter an existing lease ID", "值格式": "Value Format", "Value 内容": "Value", "值编辑器": "Value Editor", "%d / %d 字节": "%d / %d bytes",
+	"格式仅控制语法高亮，值会按输入内容原样保存。": "Format changes syntax highlighting only; the value is saved exactly as entered.", "前缀匹配": "Match Prefix", "搜索 Key 路径，例如 /app/ 或 service": "Search Key path, e.g. /app/ or service", "预览并创建": "Review and Create",
+	"请输入有效的正整数 Lease ID。": "Enter a valid positive lease ID.", "TTL 必须是正整数秒。": "TTL must be a positive number of seconds.", "请选择有效期策略。": "Select an expiration policy.",
+	"长期有效，不绑定租约": "Never expires; no lease attached", "新建临时租约，%d 秒后过期": "Create a temporary lease; expires in %d seconds", "绑定已有 Lease ID：%d": "Attach existing lease ID: %d",
+	"创建修订 %d · 修改修订 %d · 版本 %d · Lease ID %d": "Create revision %d · modified revision %d · version %d · lease ID %d",
+	"租约 TTL 暂不可用：":                            "Lease TTL is unavailable: ", "租约已过期；键值等待服务端清理。 ": "The lease expired; the server will remove the key. ",
+	"租约剩余 TTL %d 秒 · 授予 TTL %d 秒": "Lease TTL %d seconds · granted TTL %d seconds", "待写入值（%d 字节）": "Value to write (%d bytes)",
+	"写入后将移除现有租约（Lease ID %d）": "This write will detach the existing lease (ID %d).", "写入后将替换现有租约（Lease ID %d）为 Lease ID %s": "This write will replace the existing lease (ID %d) with lease ID %s.",
+	"将删除前缀 %q 匹配的 %d 个键。": "Delete %d keys matching prefix %q.", "将删除键 %q。": "Delete key %q.", "请输入键名。": "Enter a key.", "etcd 值不能超过 1 MiB。": "etcd values cannot exceed 1 MiB.",
+	"值预览（%d 字节；最多显示 4096 字节）": "Value preview (%d bytes; showing up to 4096 bytes)",
+	"正在创建 etcd 键…":            "Creating etcd key…", "etcd 键已创建。": "etcd key created.", "创建 etcd 键失败": "Failed to create etcd key",
+	"正在应用 etcd 管理操作…": "Applying etcd administrative operation…", "etcd 管理操作已完成。": "etcd administrative operation completed.", "etcd 管理操作失败": "etcd administrative operation failed",
+	"Lease ID 无效": "Invalid lease ID",
+	"请输入用户名和密码。":  "Enter a username and password.", "请输入新密码。": "Enter a new password.", "请选择角色。": "Select a role.", "请输入角色名称。": "Enter a role name.",
+	"请填写权限范围和权限类型。": "Enter a permission scope and type.", "请选择权限范围。": "Select a permission scope.", "所有键": "All Keys", "用户名：": "Username: ", "角色：": "Role: ", "范围：": "Scope: ", "权限：": "Permission: ", "键起点：": "Key start: ", "端点：": "Endpoint: ", "成员 ID：": "Member ID: ", "告警：": "Alarm: ", "Lease ID": "Lease ID",
+	"密码只会临时发送给 etcd，不会写入连接配置。": "The password is sent to etcd for this operation only and is not saved in the connection profile.",
+	"删除后该用户不能再通过 etcd 认证。":     "This user will no longer be able to authenticate to etcd.", "已有用户的角色关联和权限将受影响。": "Users assigned to this role and their permissions will be affected.",
+	"关闭认证后，etcd API 将不再验证用户名和密码。": "With authentication disabled, etcd APIs will not verify usernames or passwords.",
+	"启用前请确认 root 用户、密码及 root 角色已配置。认证启用后，当前连接可能失去访问权限；请准备可用的认证配置后重新连接。": "Before enabling authentication, configure the root user, password, and root role. This connection may lose access after authentication is enabled; reconnect with valid credentials.",
+	"整理期间此成员可能暂时无法服务请求。": "This member may be temporarily unavailable while defragmentation runs.",
+	"gRPC 失败率": "gRPC Failure Rate", "gRPC 请求速率": "gRPC Request Rate", "已应用 Proposal": "Applied Proposals", "已提交 Proposal": "Committed Proposals",
+	"用户：": "User: ", "按前缀删除": "Delete by Prefix", "没有匹配的键。 ": "No matching keys. ", "Watch 错误：": "Watch error: ", "…（值已截断，超过 1 MiB）": "… (value truncated above 1 MiB)",
+	"客户端可访问成员数仅表示当前客户端能够读取的成员状态，不代表 etcd 集群 Quorum 健康检查。": "Accessible members only indicate which member statuses this client can read; this is not an etcd quorum health check.",
+	"创建 etcd 键": "Create etcd Key", "确认将此键和值写入 etcd？": "Write this key and value to etcd?", "创建": "Create",
+	"创建 etcd 用户": "Create etcd User", "确认创建此用户？": "Create this user?", "删除 etcd 用户": "Delete etcd User", "确认删除此用户？": "Delete this user?",
+	"修改 etcd 用户密码": "Change etcd User Password", "确认修改此用户的密码？": "Change this user's password?", "授予 etcd 角色": "Grant etcd Role", "确认将角色授予此用户？": "Grant this role to the user?",
+	"撤销 etcd 用户角色": "Revoke etcd User Role", "确认撤销此用户的角色？": "Revoke this role from the user?", "创建 etcd 角色": "Create etcd Role", "确认创建此角色？": "Create this role?",
+	"删除 etcd 角色": "Delete etcd Role", "确认删除此角色？": "Delete this role?", "授予 etcd 键权限": "Grant etcd Key Permission", "确认授予此权限？": "Grant this permission?",
+	"撤销 etcd 键权限": "Revoke etcd Key Permission", "确认撤销此权限？": "Revoke this permission?", "修改 etcd 认证状态": "Change etcd Authentication", "确认关闭 etcd 认证？": "Disable etcd authentication?", "确认启用 etcd 认证？": "Enable etcd authentication?",
+	"整理 etcd 后端数据库": "Defragment etcd Backend", "确认对该成员执行数据库碎片整理？": "Defragment this member's backend?", "解除 etcd 告警": "Disarm etcd Alarm", "确认请求解除此告警？": "Request disarm of this alarm?",
+}
+
+func (app *workbench) localized(text string) string {
+	if app.language == "en" {
+		if translated := app.localizedDynamic(text); translated != "" {
+			return translated
+		}
+		if strings.HasPrefix(text, "查询 ") {
+			return "Query " + strings.TrimPrefix(text, "查询 ")
+		}
+		if translated, ok := englishUI[text]; ok {
+			return translated
+		}
+		if translated, ok := etcdEnglishUI[text]; ok {
+			return translated
+		}
+	}
+	return text
+}
+
+func (app *workbench) localizedDynamic(text string) string {
+	between := func(prefix, suffix string) (string, bool) {
+		if !strings.HasPrefix(text, prefix) || !strings.HasSuffix(text, suffix) {
+			return "", false
+		}
+		return strings.TrimSuffix(strings.TrimPrefix(text, prefix), suffix), true
+	}
+	if value, ok := between("读取 ", " 个 etcd 键。"); ok {
+		return "Read " + value + " etcd keys."
+	}
+	if value, ok := between("已读取 ", " 个 MongoDB 文档。"); ok {
+		return "Read " + value + " MongoDB documents."
+	}
+	if value, ok := between("已加载 ", " 个数据库对象"); ok {
+		return "Loaded " + value + " database objects"
+	}
+	if value, ok := between("已加载 ", " 个键；SCAN 可继续读取。"); ok {
+		return "Loaded " + value + " keys; SCAN can continue."
+	}
+	if strings.HasPrefix(text, "已读取 ") && strings.Contains(text, " 的 ") && strings.HasSuffix(text, " 列") {
+		parts := strings.SplitN(strings.TrimPrefix(text, "已读取 "), " 的 ", 2)
+		return "Read " + strings.TrimSuffix(parts[1], " 列") + " columns from " + parts[0]
+	}
+	if strings.HasPrefix(text, "已选择 ") {
+		selection := strings.TrimPrefix(text, "已选择 ")
+		if parts := strings.SplitN(selection, " ", 2); len(parts) == 2 {
+			return "Selected " + app.localized(parts[0]) + " " + parts[1]
+		}
+		return "Selected " + selection
+	}
+	if strings.HasSuffix(text, " 连接正常。") {
+		return strings.TrimSuffix(text, " 连接正常。") + " connection is healthy."
+	}
+	if strings.HasSuffix(text, " 连接配置测试成功。") {
+		return strings.TrimSuffix(text, " 连接配置测试成功。") + " connection profile test succeeded."
+	}
+	if strings.HasSuffix(text, " 连接测试失败") {
+		return strings.TrimSuffix(text, " 连接测试失败") + " connection test failed"
+	}
+	if strings.HasSuffix(text, " 已以只读事务模式连接。") {
+		return strings.TrimSuffix(text, " 已以只读事务模式连接。") + " connected in read-only transaction mode."
+	}
+	if strings.HasSuffix(text, " 已连接。") {
+		return strings.TrimSuffix(text, " 已连接。") + " connected."
+	}
+	if value, ok := between("连接 ", " 失败"); ok {
+		return "Failed to connect to " + app.localized(value)
+	}
+	if value, ok := between("etcd 写入成功，修改 revision ", "。"); ok {
+		return "etcd write succeeded · modified revision " + value
+	}
+	if strings.HasPrefix(text, "已导出 ") {
+		if parts := strings.SplitN(strings.TrimPrefix(text, "已导出 "), " 行到 ", 2); len(parts) == 2 {
+			return "Exported " + parts[0] + " rows to " + parts[1]
+		}
+	}
+	if value, ok := between("导出超过 ", "，临时文件已清理。"); ok {
+		return "Export timed out after " + value + "; temporary files were removed."
+	}
+	if value, ok := between("导出文件已完整生成到 ", "，但目录同步失败，断电后是否保留无法确认。"); ok {
+		return "The export file was fully written to " + value + ", but syncing the directory failed; its durability after a power loss is unknown."
+	}
+	if value, ok := between("", " 条 SQL 超过 64 KiB，未写入本机查询历史。"); ok && value != "" {
+		return value + " SQL queries exceeded 64 KiB and were not saved to local history."
+	}
+	if value, ok := between("查询历史已启用；", " 条超过 64 KiB 的 SQL 未保存。"); ok && value != "" {
+		return "Query history is enabled; " + value + " SQL queries exceeded 64 KiB and were not saved."
+	}
+	if strings.HasPrefix(text, "已切换到 ") {
+		return "Switched to " + app.localized(strings.TrimSuffix(strings.TrimPrefix(text, "已切换到 "), "。")) + "."
+	}
+	if strings.HasPrefix(text, "正在测试 ") && strings.HasSuffix(text, " 连接配置…") {
+		return "Testing " + strings.TrimSuffix(strings.TrimPrefix(text, "正在测试 "), " 连接配置…") + " connection profile…"
+	}
+	if strings.HasPrefix(text, "正在连接 ") && strings.HasSuffix(text, "…") {
+		return "Connecting to " + strings.TrimSuffix(strings.TrimPrefix(text, "正在连接 "), "…") + "…"
+	}
+	if strings.HasPrefix(text, "请选择 etcd ") && strings.HasSuffix(text, " PEM 文件…") {
+		return "Choose an etcd " + strings.TrimSuffix(strings.TrimPrefix(text, "请选择 etcd "), " PEM 文件…") + " PEM file…"
+	}
+	if strings.HasPrefix(text, "查询完成 · ") && strings.HasSuffix(text, " 行") {
+		return "Query completed · " + strings.TrimSuffix(strings.TrimPrefix(text, "查询完成 · "), " 行") + " rows"
+	}
+	if strings.HasPrefix(text, "查询超过 ") {
+		rest := strings.TrimPrefix(text, "查询超过 ")
+		if end := strings.Index(rest, "，已停止"); end >= 0 {
+			duration := rest[:end]
+			if strings.Contains(rest[end:], "已读取 ") {
+				count := strings.TrimSuffix(strings.SplitN(rest[end:], "已读取 ", 2)[1], " 行")
+				return fmt.Sprintf("Query timed out after %s · %s rows fetched", duration, count)
+			}
+			return "Query timed out after " + duration + "."
+		}
+	}
+	if strings.HasPrefix(text, "读取结果超过 ") && strings.HasSuffix(text, "，已停止。") {
+		duration := strings.TrimSuffix(strings.TrimPrefix(text, "读取结果超过 "), "，已停止。")
+		return "Fetching results timed out after " + duration + "."
+	}
+	if strings.HasPrefix(text, "查询完成 · 共读取 ") && strings.HasSuffix(text, " 行") {
+		return "Query completed · " + strings.TrimSuffix(strings.TrimPrefix(text, "查询完成 · 共读取 "), " 行") + " rows fetched"
+	}
+	if strings.HasPrefix(text, "查询已取消 · 已读取 ") && strings.HasSuffix(text, " 行") {
+		return "Query canceled · " + strings.TrimSuffix(strings.TrimPrefix(text, "查询已取消 · 已读取 "), " 行") + " rows fetched"
+	}
+	if strings.HasPrefix(text, "etcd 已删除 ") && strings.HasSuffix(text, " 项；预览计数可能因并发写入而变化。") {
+		count := strings.TrimSuffix(strings.TrimPrefix(text, "etcd 已删除 "), " 项；预览计数可能因并发写入而变化。")
+		return "Deleted " + count + " etcd entries; the preview count may change with concurrent writes."
+	}
+	return ""
+}

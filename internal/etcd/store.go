@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -108,7 +110,7 @@ func (connector Connector) Connect(ctx context.Context) (connection.Connection, 
 		_ = cli.Close()
 		return nil, sanitize("connect to etcd", err)
 	}
-	return &Store{client: cli, readOnly: p.ReadOnly}, nil
+	return &Store{client: cli, readOnly: p.ReadOnly, metricsClient: newMetricsHTTPClient(cfg.TLS)}, nil
 }
 
 // normalizeEndpoints accepts comma-separated host:port or http(s) URLs. URLs
@@ -164,8 +166,9 @@ func normalizeEndpoints(raw string, port int, tlsMode string) ([]string, bool, e
 }
 
 type Store struct {
-	client   *clientv3.Client
-	readOnly bool
+	client        *clientv3.Client
+	readOnly      bool
+	metricsClient *http.Client
 }
 
 func (s *Store) Driver() connection.Driver { return connection.DriverEtcd }
@@ -225,10 +228,17 @@ func (s *Store) RangeKeys(ctx context.Context, key string, prefix bool, startKey
 	}
 	opts := []clientv3.OpOption{clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend), clientv3.WithLimit(int64(limit + 1))}
 	if prefix {
-		opts = append(opts, clientv3.WithRange(clientv3.GetPrefixRangeEnd(key)))
-	}
-	if startKey != "" {
-		opts = append(opts, clientv3.WithFromKey())
+		if key == "" {
+			if startKey == "" {
+				// WithRange leaves an empty request key untouched, which etcd rejects.
+				// WithPrefix converts the empty prefix to the all-keys range.
+				opts = append(opts, clientv3.WithPrefix())
+			} else {
+				opts = append(opts, clientv3.WithFromKey())
+			}
+		} else {
+			opts = append(opts, clientv3.WithRange(clientv3.GetPrefixRangeEnd(key)))
+		}
 	}
 	resp, err := s.client.Get(ctx, queryKey, opts...)
 	if err != nil {
@@ -279,6 +289,70 @@ func (s *Store) LeaseTimeToLive(ctx context.Context, leaseID int64) (connection.
 	return connection.EtcdLeaseInfo{TTL: resp.TTL, GrantedTTL: resp.GrantedTTL}, nil
 }
 
+func (s *Store) ListLeases(ctx context.Context) ([]int64, error) {
+	if err := s.ensureOpen(); err != nil {
+		return nil, err
+	}
+	response, err := s.client.Lease.Leases(ctx)
+	if err != nil {
+		return nil, err
+	}
+	leases := make([]int64, 0, len(response.Leases))
+	for _, lease := range response.Leases {
+		leases = append(leases, int64(lease.ID))
+	}
+	sort.Slice(leases, func(i, j int) bool { return leases[i] < leases[j] })
+	return leases, nil
+}
+
+func (s *Store) LeaseDetails(ctx context.Context, leaseID int64) (connection.EtcdLeaseInfo, error) {
+	if err := s.ensureOpen(); err != nil {
+		return connection.EtcdLeaseInfo{}, err
+	}
+	if leaseID <= 0 {
+		return connection.EtcdLeaseInfo{}, errors.New("etcd lease ID must be positive")
+	}
+	response, err := s.client.TimeToLive(ctx, clientv3.LeaseID(leaseID), clientv3.WithAttachedKeys())
+	if err != nil {
+		return connection.EtcdLeaseInfo{}, err
+	}
+	const maxDisplayedLeaseKeys = 100
+	info := connection.EtcdLeaseInfo{ID: leaseID, TTL: response.TTL, GrantedTTL: response.GrantedTTL, KeyCount: len(response.Keys)}
+	for i, key := range response.Keys {
+		if i == maxDisplayedLeaseKeys {
+			info.KeysTruncated = true
+			break
+		}
+		info.Keys = append(info.Keys, string(key))
+	}
+	return info, nil
+}
+
+func (s *Store) GrantLease(ctx context.Context, ttlSeconds int64) (connection.EtcdLeaseInfo, error) {
+	if err := s.checkWritable(); err != nil {
+		return connection.EtcdLeaseInfo{}, err
+	}
+	if ttlSeconds <= 0 {
+		return connection.EtcdLeaseInfo{}, errors.New("etcd lease TTL must be a positive number of seconds")
+	}
+	response, err := s.client.Grant(ctx, ttlSeconds)
+	if err != nil {
+		return connection.EtcdLeaseInfo{}, err
+	}
+	return connection.EtcdLeaseInfo{ID: int64(response.ID), TTL: response.TTL, GrantedTTL: response.TTL}, nil
+}
+
+func (s *Store) RevokeLease(ctx context.Context, leaseID int64) error {
+	if err := s.checkWritable(); err != nil {
+		return err
+	}
+	if leaseID <= 0 {
+		return errors.New("etcd lease ID must be positive")
+	}
+	_, err := s.client.Revoke(ctx, clientv3.LeaseID(leaseID))
+	return err
+}
+
 func (s *Store) PutKey(ctx context.Context, key, value string, lease int64) (connection.EtcdEntry, error) {
 	if err := s.checkWritable(); err != nil {
 		return connection.EtcdEntry{}, err
@@ -297,6 +371,73 @@ func (s *Store) PutKey(ctx context.Context, key, value string, lease int64) (con
 		return connection.EtcdEntry{}, err
 	}
 	return s.GetKey(ctx, key)
+}
+
+func (s *Store) CreateKey(ctx context.Context, key, value string, lease int64) (connection.EtcdEntry, error) {
+	if err := s.checkWritable(); err != nil {
+		return connection.EtcdEntry{}, err
+	}
+	if err := validateKey(key); err != nil {
+		return connection.EtcdEntry{}, err
+	}
+	if len(value) > maxValueBytes {
+		return connection.EtcdEntry{}, errors.New("etcd value exceeds 1 MiB write limit")
+	}
+	if lease < 0 {
+		return connection.EtcdEntry{}, errors.New("etcd lease ID cannot be negative")
+	}
+	options := []clientv3.OpOption{}
+	if lease > 0 {
+		options = append(options, clientv3.WithLease(clientv3.LeaseID(lease)))
+	}
+	response, err := s.client.Txn(ctx).
+		If(clientv3.Compare(clientv3.CreateRevision(key), "=", 0)).
+		Then(clientv3.OpPut(key, value, options...)).Commit()
+	if err != nil {
+		return connection.EtcdEntry{}, err
+	}
+	if !response.Succeeded {
+		return connection.EtcdEntry{}, errors.New("etcd key already exists")
+	}
+	return connection.EtcdEntry{Key: key, Value: value, CreateRevision: response.Header.Revision, ModRevision: response.Header.Revision, Version: 1, Lease: lease}, nil
+}
+
+func (s *Store) CreateKeyWithTTL(ctx context.Context, key, value string, ttlSeconds int64) (connection.EtcdEntry, error) {
+	if err := s.checkWritable(); err != nil {
+		return connection.EtcdEntry{}, err
+	}
+	if err := validateKey(key); err != nil {
+		return connection.EtcdEntry{}, err
+	}
+	if len(value) > maxValueBytes {
+		return connection.EtcdEntry{}, errors.New("etcd value exceeds 1 MiB write limit")
+	}
+	if ttlSeconds <= 0 {
+		return connection.EtcdEntry{}, errors.New("etcd lease TTL must be a positive number of seconds")
+	}
+	lease, err := s.client.Grant(ctx, ttlSeconds)
+	if err != nil {
+		return connection.EtcdEntry{}, err
+	}
+	revokeLease := func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		_, _ = s.client.Revoke(cleanupCtx, lease.ID)
+	}
+	response, err := s.client.Txn(ctx).
+		If(clientv3.Compare(clientv3.CreateRevision(key), "=", 0)).
+		Then(clientv3.OpPut(key, value, clientv3.WithLease(lease.ID))).Commit()
+	if err != nil {
+		// The transaction result is ambiguous after a transport error. Let the
+		// lease expire naturally so cleanup cannot delete a key that did commit.
+		return connection.EtcdEntry{}, err
+	}
+	if !response.Succeeded {
+		revokeLease()
+		return connection.EtcdEntry{}, errors.New("etcd key already exists")
+	}
+	leaseID := int64(lease.ID)
+	return connection.EtcdEntry{Key: key, Value: value, CreateRevision: response.Header.Revision, ModRevision: response.Header.Revision, Version: 1, Lease: leaseID}, nil
 }
 
 func (s *Store) CountKeys(ctx context.Context, key string, prefix bool) (int64, error) {

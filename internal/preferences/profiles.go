@@ -24,25 +24,26 @@ const (
 // ConnectionProfile stores connection metadata and an optional opaque
 // credential reference. It must never contain a password or other secret.
 type ConnectionProfile struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Group         string `json:"group,omitempty"`
-	Environment   string `json:"environment,omitempty"`
-	Driver        string `json:"driver"`
-	Path          string `json:"path,omitempty"`
-	Host          string `json:"host,omitempty"`
-	Port          int    `json:"port,omitempty"`
-	TLSMode       string `json:"tls_mode,omitempty"`
-	Database      string `json:"database,omitempty"`
-	RedisDB       int    `json:"redis_db,omitempty"`
-	AuthSource    string `json:"auth_source,omitempty"`
-	TLSCAPath     string `json:"tls_ca_path,omitempty"`
-	TLSCertRef    string `json:"tls_cert_ref,omitempty"`
-	TLSKeyRef     string `json:"tls_key_ref,omitempty"`
-	Username      string `json:"username,omitempty"`
-	CredentialRef string `json:"credential_ref,omitempty"`
-	ReadOnly      bool   `json:"read_only,omitempty"`
-	Favorite      bool   `json:"favorite,omitempty"`
+	ID                   string         `json:"id"`
+	Name                 string         `json:"name"`
+	Group                string         `json:"group,omitempty"`
+	Environment          string         `json:"environment,omitempty"`
+	Driver               string         `json:"driver"`
+	Path                 string         `json:"path,omitempty"`
+	Host                 string         `json:"host,omitempty"`
+	Port                 int            `json:"port,omitempty"`
+	TLSMode              string         `json:"tls_mode,omitempty"`
+	Database             string         `json:"database,omitempty"`
+	RedisDB              int            `json:"redis_db,omitempty"`
+	RedisDatabaseAliases map[int]string `json:"redis_db_aliases,omitempty"`
+	AuthSource           string         `json:"auth_source,omitempty"`
+	TLSCAPath            string         `json:"tls_ca_path,omitempty"`
+	TLSCertRef           string         `json:"tls_cert_ref,omitempty"`
+	TLSKeyRef            string         `json:"tls_key_ref,omitempty"`
+	Username             string         `json:"username,omitempty"`
+	CredentialRef        string         `json:"credential_ref,omitempty"`
+	ReadOnly             bool           `json:"read_only,omitempty"`
+	Favorite             bool           `json:"favorite,omitempty"`
 }
 
 func normalizeConnectionProfile(profile ConnectionProfile) (ConnectionProfile, error) {
@@ -69,6 +70,25 @@ func normalizeConnectionProfile(profile ConnectionProfile) (ConnectionProfile, e
 	profile.Username = strings.TrimSpace(profile.Username)
 	profile.CredentialRef = strings.TrimSpace(profile.CredentialRef)
 	profile.TLSMode = strings.ToLower(strings.TrimSpace(profile.TLSMode))
+	if profile.Driver == DriverRedis {
+		aliases := make(map[int]string, len(profile.RedisDatabaseAliases))
+		for database, alias := range profile.RedisDatabaseAliases {
+			alias = strings.TrimSpace(alias)
+			if database < 0 || len(alias) > 128 || strings.ContainsAny(alias, "\r\n") {
+				return ConnectionProfile{}, errors.New("invalid Redis database alias")
+			}
+			if alias != "" {
+				aliases[database] = alias
+			}
+		}
+		if len(aliases) == 0 {
+			profile.RedisDatabaseAliases = nil
+		} else {
+			profile.RedisDatabaseAliases = aliases
+		}
+	} else if len(profile.RedisDatabaseAliases) > 0 {
+		return ConnectionProfile{}, errors.New("non-Redis profile contains Redis database aliases")
+	}
 	if profile.Name == "" {
 		return ConnectionProfile{}, errors.New("connection profile name is required")
 	}

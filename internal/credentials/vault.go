@@ -1,4 +1,4 @@
-// Package credentials stores secrets in the operating system credential vault.
+// Package credentials stores secrets in encrypted credential vaults.
 package credentials
 
 import (
@@ -27,7 +27,7 @@ var (
 	ErrEmptySecret      = errors.New("credential secret is empty")
 	ErrSecretTooLarge   = errors.New("credential secret exceeds 64 KiB supported size")
 	ErrNotFound         = errors.New("credential was not found")
-	ErrUnavailable      = errors.New("system credential vault is unavailable")
+	ErrUnavailable      = errors.New("credential vault is unavailable")
 )
 
 type Reference string
@@ -50,6 +50,8 @@ type Vault struct {
 
 type systemBackend struct{}
 
+// NewSystem creates a vault backed by the OS credential store. It is retained
+// for legacy credential migration and platform-specific integrations.
 func NewSystem() *Vault {
 	return New(systemBackend{})
 }
@@ -58,7 +60,7 @@ func New(backend Backend) *Vault {
 	return &Vault{backend: backend}
 }
 
-// Store writes a secret to the OS vault and returns a reference suitable for
+// Store writes a secret to the configured vault and returns a reference suitable for
 // configuration files. Secret values are never included in returned errors.
 func (vault *Vault) Store(secret []byte) (Reference, error) {
 	if len(secret) == 0 {
@@ -219,22 +221,10 @@ func (vault *Vault) loadChunked(account string) ([]byte, error) {
 }
 
 func (vault *Vault) deleteChunked(account string) error {
-	manifest, err := vault.backend.Get(manifestAccount(account))
-	if errors.Is(err, ErrNotFound) {
-		return vault.deleteChunksResult(account, chunkCount(maxLogicalSecretSize))
-	}
-	if err != nil {
-		return ErrUnavailable
-	}
-	length := 0
-	if len(manifest) == chunkManifestSize && string(manifest[:4]) == "DBL2" {
-		length = int(binary.BigEndian.Uint32(manifest[4:8]))
-	}
-	count := chunkCount(maxLogicalSecretSize)
-	if length > maxSecretChunkSize && length <= maxLogicalSecretSize {
-		count = chunkCount(length)
-	}
-	return vault.deleteChunksResult(account, count)
+	// Deleting the maximum possible number of chunks avoids loading a manifest.
+	// That matters for the migration backend: deletion should not trigger a
+	// fallback read from the legacy system credential store.
+	return vault.deleteChunksResult(account, chunkCount(maxLogicalSecretSize))
 }
 
 func (vault *Vault) deleteChunksResult(account string, count int) error {

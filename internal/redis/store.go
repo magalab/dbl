@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"strconv"
 	"strings"
@@ -125,6 +127,23 @@ func (s *Store) Close() error {
 	}
 	return s.client.Close()
 }
+
+func (s *Store) DatabaseSize(ctx context.Context) (int64, error) {
+	if s == nil || s.client == nil {
+		return 0, errors.New("Redis connection is closed")
+	}
+	return s.client.DBSize(ctx).Result()
+}
+
+func (s *Store) FlushDatabase(ctx context.Context) error {
+	if s == nil || s.client == nil {
+		return errors.New("Redis connection is closed")
+	}
+	if s.readOnly {
+		return errors.New("Redis connection is read-only")
+	}
+	return s.client.FlushDB(ctx).Err()
+}
 func (s *Store) ClassifyError(err error) connection.ErrorKind {
 	if err == nil {
 		return connection.ErrorUnknown
@@ -200,6 +219,7 @@ func (s *Store) InspectKey(ctx context.Context, key string) (connection.KeyInfo,
 	if typ == "none" {
 		return connection.KeyInfo{}, redisclient.Nil
 	}
+	typ = normalizedRedisType(typ)
 	ttl, err := s.client.TTL(ctx, key).Result()
 	if err != nil {
 		return connection.KeyInfo{}, err
@@ -212,6 +232,53 @@ func (s *Store) InspectKey(ctx context.Context, key string) (connection.KeyInfo,
 		length = -1
 	}
 	return connection.KeyInfo{Key: key, Type: typ, TTL: ttl, Length: length}, nil
+}
+
+func (s *Store) InspectKeys(ctx context.Context, keys []string) ([]connection.KeyInfo, error) {
+	if s == nil || s.client == nil {
+		return nil, errors.New("Redis connection is closed")
+	}
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	pipe := s.client.Pipeline()
+	typeCommands := make([]*redisclient.StatusCmd, len(keys))
+	ttlCommands := make([]*redisclient.DurationCmd, len(keys))
+	for i, key := range keys {
+		typeCommands[i] = pipe.Type(ctx, key)
+		ttlCommands[i] = pipe.TTL(ctx, key)
+	}
+	_, execErr := pipe.Exec(ctx)
+	if execErr != nil && !errors.Is(execErr, redisclient.Nil) {
+		return nil, execErr
+	}
+	infos := make([]connection.KeyInfo, 0, len(keys))
+	for i, key := range keys {
+		typ, typeErr := typeCommands[i].Result()
+		if typeErr != nil && !errors.Is(typeErr, redisclient.Nil) {
+			return infos, typeErr
+		}
+		ttl, ttlErr := ttlCommands[i].Result()
+		if ttlErr != nil && !errors.Is(ttlErr, redisclient.Nil) {
+			return infos, ttlErr
+		}
+		infos = append(infos, connection.KeyInfo{Key: key, Type: normalizedRedisType(typ), TTL: ttl})
+	}
+	return infos, nil
+}
+
+func normalizedRedisType(typ string) string {
+	if strings.HasPrefix(typ, "ReJSON-") {
+		return "json"
+	}
+	return typ
+}
+
+func (s *Store) CheckJSONSupport(ctx context.Context) error {
+	if s == nil || s.client == nil {
+		return errors.New("Redis connection is closed")
+	}
+	return s.client.Do(ctx, "JSON.GET", "__dbl_json_support_probe_9f742f6c__").Err()
 }
 func (s *Store) ReadKey(ctx context.Context, key, token string, count int) (connection.KeyValuePage, error) {
 	info, err := s.InspectKey(ctx, key)
@@ -244,6 +311,12 @@ func (s *Store) ReadKey(ctx context.Context, key, token string, count int) (conn
 			}
 			page.StringValue = value
 		}
+	case "json":
+		value, err := s.client.Do(ctx, "JSON.GET", key).Text()
+		if err != nil && !errors.Is(err, redisclient.Nil) {
+			return page, err
+		}
+		page.StringValue, page.StringValueTruncated = clipRedisValue(value)
 	case "hash":
 		values, next, err := s.client.HScan(ctx, key, cursor, "*", int64(count)).Result()
 		if err != nil {
@@ -339,7 +412,17 @@ func (s *Store) WriteKey(ctx context.Context, mutation connection.KeyMutation) e
 	}
 	switch mutation.Type {
 	case "string":
+		if mutation.PreserveTTL {
+			return s.client.SetArgs(ctx, mutation.Key, mutation.Value, redisclient.SetArgs{KeepTTL: true}).Err()
+		}
 		return s.client.Set(ctx, mutation.Key, mutation.Value, mutation.TTL).Err()
+	case "json":
+		if !json.Valid([]byte(mutation.Value)) {
+			return errors.New("Redis JSON value is not valid JSON")
+		}
+		if err := s.client.Do(ctx, "JSON.SET", mutation.Key, ".", mutation.Value).Err(); err != nil {
+			return err
+		}
 	case "hash":
 		if mutation.Field == "" {
 			return errors.New("Redis hash field is required")
@@ -363,7 +446,11 @@ func (s *Store) WriteKey(ctx context.Context, mutation connection.KeyMutation) e
 		if mutation.Field == "" {
 			return errors.New("Redis stream field is required")
 		}
-		if err := s.client.XAdd(ctx, &redisclient.XAddArgs{Stream: mutation.Key, Values: map[string]any{mutation.Field: mutation.Value}}).Err(); err != nil {
+		id := mutation.ID
+		if id == "" {
+			id = "*"
+		}
+		if err := s.client.XAdd(ctx, &redisclient.XAddArgs{Stream: mutation.Key, ID: id, Values: map[string]any{mutation.Field: mutation.Value}}).Err(); err != nil {
 			return err
 		}
 	default:
@@ -374,6 +461,102 @@ func (s *Store) WriteKey(ctx context.Context, mutation connection.KeyMutation) e
 	}
 	return nil
 }
+
+func (s *Store) WriteKeyBatch(ctx context.Context, mutations []connection.KeyMutation) error {
+	if s == nil || s.client == nil {
+		return errors.New("Redis connection is closed")
+	}
+	if s.readOnly {
+		return errors.New("Redis profile is read-only")
+	}
+	if len(mutations) == 0 {
+		return errors.New("Redis key has no values")
+	}
+	key, kind := mutations[0].Key, mutations[0].Type
+	if key == "" {
+		return errors.New("Redis key is required")
+	}
+	for _, mutation := range mutations {
+		if mutation.Key != key || mutation.Type != kind {
+			return errors.New("Redis key batch must have one key and one data type")
+		}
+		if len(mutation.Value) > maxStringBytes || len(mutation.Field) > maxStringBytes {
+			return errors.New("Redis value exceeds 1 MiB limit")
+		}
+	}
+	if (kind == "string" || kind == "json") && len(mutations) != 1 {
+		return errors.New("Redis string and JSON keys accept one value")
+	}
+	for _, mutation := range mutations {
+		switch kind {
+		case "string":
+		case "json":
+			if !json.Valid([]byte(mutation.Value)) {
+				return errors.New("Redis JSON value is not valid JSON")
+			}
+		case "hash", "stream":
+			if mutation.Field == "" {
+				return errors.New("Redis hash and stream entries require a field name")
+			}
+		case "list", "set":
+		case "zset":
+			if math.IsNaN(mutation.Score) || math.IsInf(mutation.Score, 0) {
+				return errors.New("Redis sorted set score must be a finite number")
+			}
+		default:
+			return fmt.Errorf("unsupported Redis write type %q", kind)
+		}
+	}
+	pipe := s.client.TxPipeline()
+	switch kind {
+	case "string":
+		mutation := mutations[0]
+		pipe.Set(ctx, key, mutation.Value, 0)
+	case "json":
+		mutation := mutations[0]
+		pipe.Do(ctx, "JSON.SET", key, ".", mutation.Value)
+	case "hash":
+		values := make([]any, 0, len(mutations)*2)
+		for _, mutation := range mutations {
+			values = append(values, mutation.Field, mutation.Value)
+		}
+		pipe.HSet(ctx, key, values...)
+	case "list":
+		values := make([]any, 0, len(mutations))
+		for _, mutation := range mutations {
+			values = append(values, mutation.Value)
+		}
+		pipe.RPush(ctx, key, values...)
+	case "set":
+		values := make([]any, 0, len(mutations))
+		for _, mutation := range mutations {
+			values = append(values, mutation.Value)
+		}
+		pipe.SAdd(ctx, key, values...)
+	case "zset":
+		members := make([]redisclient.Z, 0, len(mutations))
+		for _, mutation := range mutations {
+			members = append(members, redisclient.Z{Score: mutation.Score, Member: mutation.Value})
+		}
+		pipe.ZAdd(ctx, key, members...)
+	case "stream":
+		values := make(map[string]any, len(mutations))
+		for _, mutation := range mutations {
+			values[mutation.Field] = mutation.Value
+		}
+		id := mutations[0].ID
+		if id == "" {
+			id = "*"
+		}
+		pipe.XAdd(ctx, &redisclient.XAddArgs{Stream: key, ID: id, Values: values})
+	}
+	if ttl := mutations[0].TTL; ttl > 0 {
+		pipe.Expire(ctx, key, ttl)
+	}
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
 func (s *Store) DeleteKey(ctx context.Context, key string) error {
 	if s == nil || s.client == nil {
 		return errors.New("Redis connection is closed")
@@ -382,4 +565,17 @@ func (s *Store) DeleteKey(ctx context.Context, key string) error {
 		return errors.New("Redis profile is read-only")
 	}
 	return s.client.Del(ctx, key).Err()
+}
+
+func (s *Store) DeleteRedisKeys(ctx context.Context, keys []string) error {
+	if s == nil || s.client == nil {
+		return errors.New("Redis connection is closed")
+	}
+	if s.readOnly {
+		return errors.New("Redis profile is read-only")
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	return s.client.Del(ctx, keys...).Err()
 }

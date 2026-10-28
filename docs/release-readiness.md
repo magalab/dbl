@@ -22,7 +22,7 @@ go install github.com/egoist/mygo/cmd/mygo@v0.6.2
 CGO_ENABLED=0 mygo build -platform darwin/arm64,windows/amd64,windows/arm64,linux/amd64,linux/arm64
 ```
 
-构建会将 MyGo 原生 UI 打包为各平台安装产物，图标源文件为 `resources/icon.png`（1024×1024）。macOS 开发者签名/公证、Windows 签名、自动更新密钥和发布仓库尚未配置。签名私钥、更新签名密钥只能来自 CI secret 或受控密钥库，不得写入 `mygo.json`、源码或发布日志。Go runtime 依赖已生成版本化许可清单，完整上游许可/通知及 MPL-2.0 MySQL 源码已放入 MyGo 自动打包的 `resources/`；最新 darwin/arm64 app bundle 已核对包含 105 个许可/通知/源码文件，与源目录逐文件 SHA-256 一致。DBL 自身许可证仍未声明，非 Go 打包资产和法律审阅仍待完成。
+构建会将 MyGo 原生 UI 打包为各平台安装产物。Windows/Linux 使用 `mygo.json` 指定的 `resources/icon.png`；macOS 额外使用 `packaging/macos/Assets.car`，其资产目录源文件在 `packaging/macos/Assets.xcassets/`，圆角图源为 `resources/icon-macos.png`。MyGo 将 `Assets.car` 作为 macOS 图标资源优先于默认 `.icns`，其余平台继续使用通用图标。macOS 开发者签名/公证、Windows 签名、自动更新密钥和发布仓库尚未配置。签名私钥、更新签名密钥只能来自 CI secret 或受控密钥库，不得写入 `mygo.json`、源码或发布日志。Go runtime 依赖已生成版本化许可清单，完整上游许可/通知及 MPL-2.0 MySQL 源码已放入 MyGo 自动打包的 `resources/`；最新 darwin/arm64 app bundle 已核对包含 105 个许可/通知/源码文件，与源目录逐文件 SHA-256 一致。DBL 自有代码许可证待项目所有者确认；非 Go 打包资产和法律审阅仍待完成。
 
 macOS 从“DBL”应用菜单、Linux/Windows 从“帮助”菜单打开“关于 DBL”面板；面板显示打包版本、DBL 名称和 MyGo 版本，未打包的开发运行显示“开发版”。
 
@@ -35,6 +35,6 @@ macOS 从“DBL”应用菜单、Linux/Windows 从“帮助”菜单打开“关
 - 对 SQLite、PostgreSQL、MySQL、Redis、MongoDB、etcd 的关键路径做真实服务验收；Redis、MongoDB 与 etcd 明文单节点已验证；PostgreSQL/MySQL profile 私有 CA + verify-full、Redis ACL + verify-full TLS、MongoDB verify-full 证书验证与 SCRAM + TLS 加密路径已验证。PostgreSQL/MySQL 基础 profile 保存/测试/连接/查询已在 macOS 测试窗口分别对 PostgreSQL 17.11 和 MySQL 8.4.13 完成 trust/无密码认证、无 TLS smoke；MySQL `verify-full` + profile CA 路径的真实 TLS 集成也已通过，PG/MySQL CA 输入框和严格 TLS 提示有 UI tester 覆盖。PG/MySQL TLS profile 可见端到端流程与凭据 vault UI 生命周期、MongoDB/etcd/AI UI 人工验收及 etcd 目标部署版本仍缺证据；revision compaction 与短 lease 到期行为已有集成测试。
 - 对 AI provider 抓包确认默认请求不含 SQL/错误/schema/真实值；勾选时显示准确发送内容；测试取消、重定向拒绝、失败提示和 key 清理。
 - 完成中文输入法、键盘焦点、屏幕阅读器/辅助技术、大字号、窄窗口和高对比度检查。
-- 执行签名和自动更新密钥恢复演练；崩溃恢复策略已定为不恢复未保存的 SQL 草稿/结果、设置以原子文件更新保留。设置包测试已在文件创建、写入、同步、关闭及替换边界通过子进程主动退出；另以操作系统强制终止子进程覆盖替换前/替换后，重启只读到完整旧值或完整新值。真实掉电/存储故障注入、Windows ACL/替换运行时验收仍待完成。Go runtime 清单、完整许可证文本和 MPL-2.0 驱动源代码已随 macOS bundle 验证；DBL 自身许可证选择、非 Go 资产审查和支持版本政策仍待完成。
+- 执行签名和自动更新密钥恢复演练；崩溃恢复策略已定为不恢复未保存的 SQL 草稿/结果、设置以原子文件更新保留。设置包测试已在文件创建、写入、同步、关闭及替换边界通过子进程主动退出；另以操作系统强制终止子进程覆盖替换前/替换后，重启只读到完整旧值或完整新值。真实掉电/存储故障注入、Windows ACL/替换运行时验收仍待完成。Go runtime 清单、完整许可证文本和 MPL-2.0 驱动源代码已随 macOS bundle 验证；非 Go 资产审查和支持版本政策仍待完成。
 
 满足这些项并附上可复现记录后，才能将相应平台从候选转为支持。

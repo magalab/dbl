@@ -4,24 +4,26 @@
 
 ## 运行
 
-需要 Go 1.27.1 或更新版本。依赖下载可用后运行：
+需要 Go 1.27.1 或更新版本。macOS 开发时将二进制构建到固定路径：
 
 ```sh
-CGO_ENABLED=0 go run .
+mkdir -p build
+CGO_ENABLED=0 go build -o build/dbl .
 ```
 
-macOS 的应用菜单、Linux/Windows 的“帮助”菜单均提供“关于 DBL”，显示应用版本与 MyGo 版本。窗口中包含可拖动分栏、窄窗口自动隐藏的检查器、MyGo SQL 代码编辑器（含格式化按钮）、虚拟列表和结果表，以及最多 16 个互相独立的查询工作区标签。标签分别保留 SQL 文本、已读结果、排序和会话历史；格式化器保留字符串、标识符和注释内容，不解析或验证 SQL 方言。SQLite 连接由标签共享。切换有未读结果的标签会停止该标签的后续读取并保留已读部分。SQLite 原生文件选择打开/新建、路径输入、关闭、可选只读连接、对象与列浏览、SQL 查询、取消、续读、单元格/行复制、CSV/JSON 导出和会话查询历史也已接入；会话内历史可按工作区清空并随退出清除，另可在历史面板选择本机持久保存。错误先显示摘要，用户可展开技术详情；已识别的数据库服务错误只显示错误码或通用类别，不回显服务端原文和可能包含的键值。数据库对象按 200 项 keyset 页面加载；查询批次默认最多 128 行且有约 8 MiB 的字节目标；结果窗口最多保留 10,000 行、约 64 MiB 的估算行数据，显示当前来源行范围。超过单行缓存上限的行会计数并明确提示未保留。结果表支持按列排序，但只重排当前保留窗口，不改变游标读取顺序，也不表示完整查询结果已排序。完整导出会在只读连接上重跑生成当前结果窗口的 SQL，而不是编辑器后来修改的文本；结果来源文件与当前连接不一致时会禁用导出。CSV/JSON 流式写入私有临时文件，完成并同步后才原子发布；取消或失败会清理临时文件，发布时拒绝覆盖已有目标。重新执行可能因非确定性 SQL 或并发写入而得到不同数据。
+连接密码、API key 和 TLS 私钥保存在用户配置目录 `dbl/credentials/` 中，以 AES-GCM 加密；密钥文件与密文一起保存在该目录，目录和文件仅当前 OS 用户可读。复制配置目录时也会复制解密密钥，因此这能保护误读配置文件，不用于防护整个用户目录被复制或当前账户被攻破。旧版本保存在系统钥匙串中的凭据会在首次使用时迁移到本地加密存储；迁移旧凭据时系统可能要求授权一次，迁移后不再访问钥匙串。
 
-本机偏好保存最近 SQLite 文件路径，连接 profile 支持分组、收藏、只读和复制。新建/编辑连接使用原生模态面板，侧栏只用于连接与对象导航；`⌘/Ctrl+N` 新建连接，`⌘/Ctrl+T` 新建查询工作区，`⌘/Ctrl+,` 打开设置。设置面板管理外观和查询历史，并提供 AI provider 设置入口。SQLite profile 可测试/打开；PostgreSQL/MySQL 支持 TLS、SQL 工作区和数据库/Schema 选择（切换后重连）；PostgreSQL 当前 schema 决定未限定对象名的 search_path，选择共享 schema 前应确认其创建者可信；SQLite 固定使用 main schema；Redis 支持 SCAN、类型读取、TTL 和基础写入；MongoDB 支持数据库/集合、find、基础 pipeline、分页文档与 diff 后写入；etcd 支持多 endpoint、TLS/认证、前缀/精确读取、revision/lease TTL 元数据、watch 和删除预览。Redis 不调用 `KEYS`。Mongo 聚合禁止 `$out`/`$merge`；etcd 删除默认精确键，前缀删除需显式开启并先查看数量。etcd mTLS 客户端证书和私钥进入系统凭据库，自定义 CA 使用 PEM 路径；MongoDB 支持 PEM 自定义 CA 并追加到系统根证书，暂不支持 mTLS 客户端证书。AI 面板支持配置 OpenAI-compatible SSE endpoint、model 与 vault API key，提供按任务分类的提示模板、多行提示编辑器和按上次已审核请求重新生成，并生成/解释 SQL、生成 Mongo filter/pipeline 草稿及提供 Redis/etcd 文字建议。上下文逐项 opt-in，发送前展示实际 payload；文档、键值和配置值不发送。AI 草稿不自动执行，插入 SQL 后执行前展示连接、语句和粗略风险分类并要求确认。MongoDB/Redis/etcd 已通过本机服务集成；Redis ACL + verify-full TLS、MongoDB SCRAM + TLS 加密及 profile 私有 CA verify-full 路径也已通过。目标 etcd 版本与 UI、AI 云 provider 与各数据源桌面 bundle 交互尚未完整验收。配置位于用户配置目录下的 `dbl/settings.json`；Unix 权限是 `0700`/`0600`，Windows ACL 行为仍需验证。配置只保存非敏感元数据与不透明凭据引用；正式应用 bundle 重启后的引用/授权行为，以及 Windows/Linux 后端仍待验证。
+macOS 的应用菜单、Linux/Windows 的“帮助”菜单均提供“关于 DBL”，显示应用版本与 MyGo 版本。窗口中包含可拖动分栏、窄窗口切换为全页的 AI 助手面板、MyGo SQL 代码编辑器（含格式化按钮）、虚拟列表和结果表，以及最多 16 个互相独立的查询工作区标签。标签分别保留 SQL 文本、已读结果、排序和会话历史；格式化器保留字符串、标识符和注释内容，不解析或验证 SQL 方言。SQLite 连接由标签共享。切换有未读结果的标签会停止该标签的后续读取并保留已读部分。SQLite 原生文件选择打开/新建、关闭、可选只读连接、对象与列浏览、SQL 查询、取消、分页读取、单元格/行复制、CSV/JSON 导出和会话查询历史也已接入；会话内历史可按工作区清空并随退出清除，另可在历史面板选择本机持久保存。错误先显示摘要，用户可展开技术详情；已识别的数据库服务错误只显示错误码或通用类别，不回显服务端原文和可能包含的键值。数据库对象按 200 项 keyset 页面加载；查询结果默认每页 100 行，可选 25/50/100/200/500，页码字段回车可跳转到已加载页面，支持首页/上一页/下一页/当前已读末页。对符合安全读取条件的单条 SELECT，“统计总数”会在后台向数据库提交可取消的 COUNT 查询，不把全部结果行传到界面；复杂查询或可能有副作用的语句不提供此操作。统计仍可能受数据库执行计划和并发写入影响。结果内存有界，过大结果中较早的行可能释放，超大行不会显示。结果表支持按列排序，但只重排当前已读取的结果，不改变游标读取顺序，也不表示完整查询结果已排序。完整导出会在只读连接上重跑生成当前结果窗口的 SQL，而不是编辑器后来修改的文本；结果来源文件与当前连接不一致时会禁用导出。CSV/JSON 流式写入私有临时文件，完成并同步后才原子发布；取消或失败会清理临时文件，发布时拒绝覆盖已有目标。重新执行可能因非确定性 SQL 或并发写入而得到不同数据。
 
-MongoDB 集合检查器会按需读取索引，只展示名称、key definition、unique/sparse 标记和 TTL 属性，不提供索引写入或删除操作。
+本机偏好保存最近 SQLite 文件路径，连接 profile 支持分组、收藏、只读和复制。新建/编辑连接使用原生模态面板，侧栏只用于连接与对象导航；初次启动时左侧连接导航展开、AI 助手面板关闭；宽窗口可将 AI 助手固定在右侧并继续使用中央数据库工作区，窄窗口切换为全页 AI 工作区。未连接时显示连接欢迎页，连接后先显示概览；用户新建查询后才显示查询标签和编辑器。`⌘/Ctrl+N` 新建连接，`⌘/Ctrl+T` 新建查询工作区，`⌘/Ctrl+,` 打开设置窗口。设置窗口管理外观和查询历史，并提供 AI provider 设置入口。SQLite profile 可测试/打开；PostgreSQL/MySQL 支持 TLS、SQL 工作区和数据库/Schema 选择（切换后重连）；PostgreSQL 当前 schema 决定未限定对象名的 search_path，选择共享 schema 前应确认其创建者可信；SQLite 固定使用 main schema；Redis 支持 SCAN、类型读取、TTL 和基础写入；MongoDB 支持数据库/集合、find、基础 pipeline、分页文档与 diff 后写入；etcd 支持多 endpoint、TLS/认证、前缀/精确读取、revision/lease TTL 元数据、watch 和删除预览。Redis 不调用 `KEYS`。Mongo 聚合禁止 `$out`/`$merge`；etcd 删除默认精确键，前缀删除需显式开启并先查看数量。etcd mTLS 客户端证书和私钥、AI API key、数据库密码保存在本机加密凭据库，自定义 CA 使用 PEM 路径；MongoDB 支持 PEM 自定义 CA 并追加到系统根证书，暂不支持 mTLS 客户端证书。AI 助手可从顶部按钮或 `⌘/Ctrl+Shift+B` 在右侧打开；窄窗口中切换为全页工作区。面板支持配置 OpenAI-compatible SSE endpoint、model 与本机加密 API key，提供按任务分类的提示模板、多行提示编辑器和按上次已审核请求重新生成，并生成/解释 SQL、生成 Mongo filter/pipeline 草稿及提供 Redis/etcd 文字建议。上下文逐项 opt-in，发送前展示实际 payload；文档、键值和配置值不发送。AI 草稿不自动执行，插入 SQL 后执行前展示连接、语句和粗略风险分类并要求确认。MongoDB/Redis/etcd 已通过本机服务集成；Redis ACL + verify-full TLS、MongoDB SCRAM + TLS 加密及 profile 私有 CA verify-full 路径也已通过。目标 etcd 版本与 UI、AI 云 provider 与各数据源桌面 bundle 交互尚未完整验收。配置位于用户配置目录下的 `dbl/settings.json` 和 `dbl/credentials/`；Unix 权限是 `0700`/`0600`，Windows ACL 行为仍需验证。
+
 
 AI 的提示、请求预览和回答只在运行期间保留，可用“清空 AI 内容”立即清除；未保存 API key 有单独清除入口。
 回答可通过“复制 AI 回答”复制到系统剪贴板。
 
 PostgreSQL/MySQL/MongoDB profile 支持附加 PEM 格式自定义 CA，并与系统根证书合并；只可与 verify-full/verify-ca 配合。客户端证书仅 etcd 支持。
 
-Redis 键浏览器支持按 string/hash/list/set/zset/stream 类型筛选，并通过 `SCAN TYPE` 延续游标分页；该服务端选项要求 Redis 6.0 或更新版本。
+Redis 工作区在键列表中显示类型和 TTL，支持按 string/hash/list/set/zset/stream 筛选、`SCAN` 分页、多选和批量删除。新增键可创建 String、Hash、List、Set、Sorted Set、Stream 和 JSON，并设置 TTL；JSON 需要服务器加载并授权 RedisJSON。详情区分页展示各类型的值，支持修改 String、更新 Hash 字段，以及向 List、Set、Sorted Set 和 Stream 追加数据；String 更新会保留原 TTL。类型筛选使用 `SCAN TYPE`，要求 Redis 6.0 或更新版本。
 
 ## 验证
 
@@ -125,7 +127,7 @@ DBL_TEST_ETCD_USERNAME=dbltest DBL_TEST_ETCD_PASSWORD=secret \
 
 ## 第三方许可
 
-`THIRD_PARTY_NOTICES.md` 列出六个发布目标的 Go 运行依赖及版本；完整上游许可/通知文件随包放在 `resources/THIRD_PARTY_LICENSES/`。MySQL 驱动 MPL-2.0 源码也一并保留。DBL 自身许可证尚未由项目所有者决定，发布前仍需处理；该清单不代表完成法律审阅。
+DBL 自有代码许可证待项目所有者确认。`THIRD_PARTY_NOTICES.md` 列出六个发布目标的 Go 运行依赖及版本；完整上游许可/通知文件随包放在 `resources/THIRD_PARTY_LICENSES/`。MySQL 驱动 MPL-2.0 源码也一并保留，各第三方组件仍按其各自许可证分发；该清单不代表完成法律审阅。
 
 ## 当前阶段限制
 

@@ -208,6 +208,12 @@ func (store *Store) CurrentNamespace(ctx context.Context) (string, error) {
 	return schema.String, nil
 }
 
+func (store *Store) CurrentDatabase(ctx context.Context) (string, error) {
+	var database string
+	err := store.db.QueryRowContext(ctx, "SELECT current_database()").Scan(&database)
+	return database, err
+}
+
 func (store *Store) StartQuery(ctx context.Context, statement string) (*sqlstream.Cursor, error) {
 	if store == nil || store.db == nil {
 		return nil, errors.New("PostgreSQL connection is closed")
@@ -251,12 +257,42 @@ func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterNa
 			WHERE n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
 			UNION ALL
 			SELECT n.nspname AS schema_name, c.relname AS object_name,
-			       CASE WHEN c.relkind IN ('v', 'm') THEN 'view'::text ELSE 'table'::text END AS object_type,
+			       CASE c.relkind
+			           WHEN 'v' THEN 'view'::text
+			           WHEN 'm' THEN 'materialized_view'::text
+			           WHEN 'S' THEN 'sequence'::text
+			           ELSE 'table'::text
+			       END AS object_type,
 			       CASE WHEN c.relkind IN ('v', 'm') THEN pg_catalog.pg_get_viewdef(c.oid, true) ELSE ''::text END AS definition
 			FROM pg_catalog.pg_class AS c
 			JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
-			WHERE c.relkind IN ('r', 'p', 'v', 'm')
+			WHERE c.relkind IN ('r', 'p', 'f', 'v', 'm', 'S')
 			  AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
+			UNION ALL
+			SELECT n.nspname AS schema_name,
+			       p.proname || '(' || pg_catalog.pg_get_function_identity_arguments(p.oid) || ')' AS object_name,
+			       CASE WHEN pg_catalog.to_jsonb(p)->>'prokind' = 'p' THEN 'procedure'::text ELSE 'function'::text END AS object_type,
+			       pg_catalog.pg_get_functiondef(p.oid) AS definition
+			FROM pg_catalog.pg_proc AS p
+			JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
+			WHERE NOT COALESCE((pg_catalog.to_jsonb(p)->>'proisagg')::boolean, false)
+			  AND COALESCE(pg_catalog.to_jsonb(p)->>'prokind', 'f') IN ('f', 'p', 'w')
+			  AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
+			UNION ALL
+			SELECT n.nspname AS schema_name, t.typname AS object_name,
+			       'type'::text AS object_type, ''::text AS definition
+			FROM pg_catalog.pg_type AS t
+			JOIN pg_catalog.pg_namespace AS n ON n.oid = t.typnamespace
+			WHERE t.typtype IN ('d', 'e', 'r', 'm') AND t.typisdefined
+			  AND t.typname NOT LIKE '\_%' ESCAPE '\'
+			  AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
+			UNION ALL
+			SELECT n.nspname AS schema_name, e.extname AS object_name,
+			       'extension'::text AS object_type,
+			       'CREATE EXTENSION IF NOT EXISTS ' || pg_catalog.quote_ident(e.extname) || ';' AS definition
+			FROM pg_catalog.pg_extension AS e
+			JOIN pg_catalog.pg_namespace AS n ON n.oid = e.extnamespace
+			WHERE n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
 		)
 		SELECT schema_name, object_name, object_type, definition
 		FROM objects

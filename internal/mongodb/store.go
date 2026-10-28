@@ -210,7 +210,17 @@ func (s *Store) Collections(ctx context.Context, database string) ([]string, err
 	if err := s.ensureOpen(); err != nil {
 		return nil, err
 	}
-	return s.client.Database(database).ListCollectionNames(ctx, bson.D{})
+	names, err := s.client.Database(database).ListCollectionNames(ctx, bson.D{})
+	if err != nil {
+		return nil, err
+	}
+	collections := names[:0]
+	for _, name := range names {
+		if !strings.HasPrefix(name, "system.") {
+			collections = append(collections, name)
+		}
+	}
+	return collections, nil
 }
 func (s *Store) CollectionIndexes(ctx context.Context, database, collection string) ([]connection.DocumentIndex, error) {
 	if err := s.ensureOpen(); err != nil {

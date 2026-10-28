@@ -62,6 +62,53 @@ type SQL interface {
 	Export(context.Context, string, sqlstream.ExportFormat, io.Writer) (int64, error)
 }
 
+// QueryCancel is an adapter-provided way to stop a query on the database
+// server. It complements context cancellation for drivers whose cancellation
+// only closes the client connection.
+type QueryCancel func(context.Context) error
+
+// QueryCancellation is an optional SQL capability for queries that need
+// explicit server-side cancellation. The adapter registers the cancel
+// function before starting the query so callers can cancel long operations.
+type QueryCancellation interface {
+	StartQueryWithCancellation(context.Context, string, func(QueryCancel)) (*sqlstream.Cursor, error)
+}
+
+// TableEditor applies a reviewed batch of edits to one SQL table in a single
+// transaction. Values are passed separately from identifiers; adapters must
+// quote identifiers and bind values with driver parameters.
+type TableEditor interface {
+	ApplyTableChanges(context.Context, Object, []string, []TableChange) error
+}
+
+// SchemaEditor applies a reviewed set of table DDL statements. Implementations
+// should use a transaction when their database supports transactional DDL.
+type SchemaEditor interface {
+	ApplySchemaChanges(context.Context, []string) error
+}
+
+type TableChangeKind uint8
+
+const (
+	InsertRow TableChangeKind = iota + 1
+	UpdateRow
+	DeleteRow
+)
+
+type TableChange struct {
+	Kind     TableChangeKind
+	Original map[string]any
+	Values   map[string]any
+}
+
+const MaxTableChangeBatch = 500
+
+// CurrentDatabase is an optional SQL capability for adapters that can report
+// the server-side database selected by a connection.
+type CurrentDatabase interface {
+	CurrentDatabase(context.Context) (string, error)
+}
+
 // KeyValue is a capability contract for key/value stores. Cursor values are
 // opaque to the UI and pages must remain bounded.
 type KeyValue interface {
@@ -72,6 +119,36 @@ type KeyValue interface {
 	ReadKey(context.Context, string, string, int) (KeyValuePage, error)
 	WriteKey(context.Context, KeyMutation) error
 	DeleteKey(context.Context, string) error
+}
+
+// RedisBulkKeyInspector is an optional Redis capability for loading compact
+// type and TTL metadata for a page of keys without issuing one round trip per key.
+type RedisBulkKeyInspector interface {
+	InspectKeys(context.Context, []string) ([]KeyInfo, error)
+}
+
+// RedisBulkKeyWriter creates a key from multiple entries in one Redis
+// transaction where the adapter can express the data type as a batch.
+type RedisBulkKeyWriter interface {
+	WriteKeyBatch(context.Context, []KeyMutation) error
+}
+
+// RedisBulkKeyDeleter removes several keys with one Redis DEL operation.
+type RedisBulkKeyDeleter interface {
+	DeleteRedisKeys(context.Context, []string) error
+}
+
+// RedisJSONSupport reports whether the connected Redis server recognizes the
+// RedisJSON commands without modifying data.
+type RedisJSONSupport interface {
+	CheckJSONSupport(context.Context) error
+}
+
+// RedisDatabaseAdmin is an optional capability for operations scoped to the
+// Redis logical database selected by the connection profile.
+type RedisDatabaseAdmin interface {
+	DatabaseSize(context.Context) (int64, error)
+	FlushDatabase(context.Context) error
 }
 
 // Documents is a capability contract for document databases. JSON inputs and
@@ -102,6 +179,47 @@ type Configuration interface {
 	Watch(context.Context, string, bool, int64) <-chan EtcdWatchEvent
 }
 
+// EtcdKeyCreator exposes an atomic create-only write so adding a key cannot
+// silently overwrite an existing value.
+type EtcdKeyCreator interface {
+	CreateKey(context.Context, string, string, int64) (EtcdEntry, error)
+}
+
+// EtcdKeyTTLWriter creates a key with a newly granted, expiring lease.
+type EtcdKeyTTLWriter interface {
+	CreateKeyWithTTL(context.Context, string, string, int64) (EtcdEntry, error)
+}
+
+// EtcdLeaseAdmin exposes lease listing, inspection, creation, and revocation.
+// Revoking a lease deletes every key attached to it.
+type EtcdLeaseAdmin interface {
+	ListLeases(context.Context) ([]int64, error)
+	LeaseDetails(context.Context, int64) (EtcdLeaseInfo, error)
+	GrantLease(context.Context, int64) (EtcdLeaseInfo, error)
+	RevokeLease(context.Context, int64) error
+}
+
+// EtcdAdmin exposes the optional cluster and authentication APIs available on etcd v3.
+// Secret fields are accepted only for the duration of a call and are never returned.
+type EtcdAdmin interface {
+	Dashboard(context.Context) (EtcdDashboard, error)
+	AuthOverview(context.Context) (EtcdAuthOverview, error)
+	UserDetails(context.Context, string) (EtcdUser, error)
+	RoleDetails(context.Context, string) (EtcdRole, error)
+	SetAuthEnabled(context.Context, bool) error
+	CreateUser(context.Context, string, string) error
+	DeleteUser(context.Context, string) error
+	ChangeUserPassword(context.Context, string, string) error
+	GrantUserRole(context.Context, string, string) error
+	RevokeUserRole(context.Context, string, string) error
+	CreateRole(context.Context, string) error
+	DeleteRole(context.Context, string) error
+	GrantRolePermission(context.Context, string, string, string, string) error
+	RevokeRolePermission(context.Context, string, string, string) error
+	Defragment(context.Context, string) error
+	DisarmAlarm(context.Context, uint64, string) error
+}
+
 type Connector interface {
 	Connect(context.Context) (Connection, error)
 }
@@ -125,6 +243,9 @@ type Column struct {
 	Position   int
 	Name       string
 	Type       string
+	Extra      string
+	Collation  string
+	Comment    string
 	NotNull    bool
 	PrimaryKey bool
 	Hidden     int
@@ -146,9 +267,10 @@ type KeyValueEntry struct {
 	Truncated    bool
 }
 type KeyMutation struct {
-	Key, Type, Field, Value string
-	Score                   float64
-	TTL                     time.Duration
+	Key, Type, ID, Field, Value string
+	Score                       float64
+	TTL                         time.Duration
+	PreserveTTL                 bool
 }
 type KeyValuePage struct {
 	Type                 string
@@ -182,7 +304,11 @@ type EtcdEntry struct {
 	ValueTruncated                              bool
 }
 type EtcdLeaseInfo struct {
+	ID              int64
 	TTL, GrantedTTL int64
+	Keys            []string
+	KeyCount        int
+	KeysTruncated   bool
 }
 type EtcdPage struct {
 	Entries []EtcdEntry
@@ -194,6 +320,93 @@ type EtcdWatchEvent struct {
 	Revision, Version, Lease int64
 	ValueTruncated           bool
 	Err                      error
+}
+
+type EtcdDashboard struct {
+	Members       []EtcdMember
+	Alarms        []EtcdAlarm
+	Metrics       EtcdMetrics
+	MemberListErr string
+	AlarmListErr  string
+	AuthStatusErr string
+	AuthEnabled   bool
+	AuthRevision  uint64
+	ClusterID     uint64
+	Revision      int64
+}
+
+type EtcdMember struct {
+	ID               uint64
+	Name             string
+	ClientURLs       []string
+	PeerURLs         []string
+	IsLearner        bool
+	Reachable        bool
+	Endpoint         string
+	StatusError      string
+	Version          string
+	ReportedMemberID uint64
+	LeaderID         uint64
+	Revision         int64
+	RaftIndex        uint64
+	RaftAppliedIndex uint64
+	RaftTerm         uint64
+	BackendSize      int64
+	BackendSizeInUse int64
+	BackendSizeQuota int64
+	ServerErrors     []string
+}
+
+type EtcdAlarm struct {
+	MemberID uint64
+	Type     string
+}
+
+type EtcdMetrics struct {
+	Available           bool
+	Endpoint            string
+	Error               string
+	SampledAt           time.Time
+	UptimeSeconds       float64
+	HasLeader           float64
+	LeaderChanges       float64
+	ProposalsCommitted  float64
+	ProposalsApplied    float64
+	ProposalsPending    float64
+	ProposalsFailed     float64
+	BackendSize         float64
+	BackendSizeInUse    float64
+	BackendQuota        float64
+	ResidentMemoryBytes float64
+	Goroutines          float64
+	GRPCRequestsTotal   float64
+	GRPCFailuresTotal   float64
+}
+
+type EtcdAuthOverview struct {
+	Enabled     bool
+	Revision    uint64
+	Users       []string
+	Roles       []string
+	StatusError string
+	UsersError  string
+	RolesError  string
+}
+
+type EtcdUser struct {
+	Name  string
+	Roles []string
+}
+
+type EtcdRole struct {
+	Name        string
+	Permissions []EtcdPermission
+}
+
+type EtcdPermission struct {
+	Type     string
+	Key      string
+	RangeEnd string
 }
 
 type Snapshot struct {

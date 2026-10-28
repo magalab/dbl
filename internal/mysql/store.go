@@ -266,6 +266,79 @@ func (store *Store) StartQuery(ctx context.Context, statement string) (*sqlstrea
 	return sqlstream.Open(ctx, store.db, statement)
 }
 
+// StartQueryWithCancellation pins the query to a known MySQL session and
+// registers a server-side KILL QUERY action before starting it. Closing a
+// client socket alone may not interrupt a long aggregate until MySQL tries to
+// send its result.
+func (store *Store) StartQueryWithCancellation(ctx context.Context, statement string, register func(connection.QueryCancel)) (*sqlstream.Cursor, error) {
+	if store == nil || store.db == nil {
+		return nil, errors.New("MySQL connection is closed")
+	}
+	conn, err := store.db.Conn(ctx)
+	if err != nil {
+		return nil, redactError("prepare cancellable MySQL query", err, store.password())
+	}
+
+	var connectionID uint64
+	if err := conn.QueryRowContext(ctx, "SELECT CONNECTION_ID()").Scan(&connectionID); err != nil {
+		_ = conn.Close()
+		return nil, redactError("identify MySQL query session", err, store.password())
+	}
+	if register != nil {
+		register(func(cancelCtx context.Context) error {
+			killer, err := store.db.Conn(cancelCtx)
+			if err != nil {
+				return redactError("open MySQL query cancellation connection", err, store.password())
+			}
+			defer killer.Close()
+			_, err = killer.ExecContext(cancelCtx, fmt.Sprintf("KILL QUERY %d", connectionID))
+			var mysqlErr *mysqldriver.MySQLError
+			if errors.As(err, &mysqlErr) && mysqlErr.Number == 1094 {
+				// The query completed or its session disconnected before KILL ran.
+				return nil
+			}
+			return redactError("cancel MySQL query on the server", err, store.password())
+		})
+	}
+
+	var queryer sqlstream.QueryerContext = conn
+	var tx *sql.Tx
+	if store.readOnly {
+		tx, err = conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+		if err != nil {
+			_ = conn.Close()
+			return nil, redactError("start read-only MySQL query", err, store.password())
+		}
+		queryer = tx
+	}
+	cursor, err := sqlstream.Open(ctx, queryer, statement)
+	if err != nil {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+		_ = conn.Close()
+		return nil, redactError("run cancellable MySQL query", err, store.password())
+	}
+	cursor.OnFinish(func(completed bool) error {
+		var finishErr error
+		if tx != nil {
+			if completed {
+				finishErr = tx.Commit()
+			} else if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+				finishErr = err
+			}
+		}
+		if closeErr := conn.Close(); finishErr == nil {
+			finishErr = closeErr
+		}
+		if finishErr != nil {
+			return redactError("finish cancellable MySQL query", finishErr, store.password())
+		}
+		return nil
+	})
+	return cursor, nil
+}
+
 func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterName string, limit int) (connection.ObjectPage, error) {
 	if limit <= 0 {
 		limit = 200
@@ -329,8 +402,8 @@ func (store *Store) Columns(ctx context.Context, schema, table string) ([]connec
 	}
 	const query = `
 		SELECT ordinal_position, column_name, column_type, is_nullable = 'NO',
-		       column_key = 'PRI', extra LIKE '%GENERATED%' OR extra LIKE '%auto_increment%',
-	       column_default
+		       column_key = 'PRI', extra LIKE '%GENERATED%' OR extra LIKE '%auto_increment%' OR extra LIKE '%INVISIBLE%',
+	       column_default, extra, collation_name, column_comment
 		FROM information_schema.columns
 		WHERE table_schema = ? AND table_name = ?
 		ORDER BY ordinal_position`
@@ -342,12 +415,16 @@ func (store *Store) Columns(ctx context.Context, schema, table string) ([]connec
 	columns := make([]connection.Column, 0)
 	for rows.Next() {
 		var (
-			column connection.Column
-			hidden bool
-			def    sql.NullString
+			column    connection.Column
+			hidden    bool
+			def       sql.NullString
+			collation sql.NullString
 		)
-		if err := rows.Scan(&column.Position, &column.Name, &column.Type, &column.NotNull, &column.PrimaryKey, &hidden, &def); err != nil {
+		if err := rows.Scan(&column.Position, &column.Name, &column.Type, &column.NotNull, &column.PrimaryKey, &hidden, &def, &column.Extra, &collation, &column.Comment); err != nil {
 			return nil, redactError("read MySQL column metadata", err, store.password())
+		}
+		if collation.Valid {
+			column.Collation = collation.String
 		}
 		if hidden {
 			column.Hidden = 1

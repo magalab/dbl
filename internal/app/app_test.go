@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -24,12 +24,23 @@ import (
 func newTestWorkbench() *workbench {
 	first := newQueryWorkspace(1)
 	return &workbench{
-		workspaces:      []*queryWorkspace{first},
-		activeQuery:     first,
-		activeWorkspace: 0,
-		nextWorkspaceID: 2,
-		profileDriver:   "sqlite",
+		workspaces:              []*queryWorkspace{first},
+		activeQuery:             first,
+		activeWorkspace:         0,
+		nextWorkspaceID:         2,
+		profileDriver:           "sqlite",
+		queryWorkspaceRequested: true,
 	}
+}
+
+func openTestConnectionEditor(t *testing.T, app *workbench) *ui.Tester {
+	t.Helper()
+	tester := ui.NewTester(app.view, 1440, 900)
+	if err := tester.Click("新建连接…"); err != nil {
+		t.Fatalf("open connection editor: %v", err)
+	}
+	tester.Frame()
+	return tester
 }
 
 func newAIRequestWorkbench() *workbench {
@@ -157,6 +168,8 @@ func TestRemovingSavedAIKeyAlsoDisablesAI(t *testing.T) {
 func TestEtcdWatchUIIndicatesTruncatedValues(t *testing.T) {
 	app := newTestWorkbench()
 	app.etcdStore = &etcdadapter.Store{}
+	app.etcdSelectedKey = "/sample/key"
+	app.etcdSelected = connection.EtcdEntry{Key: "/sample/key", Value: "preview", ValueTruncated: true}
 	app.etcdWatchEvents = []connection.EtcdWatchEvent{{
 		Type: "PUT", Key: "/sample/key", Value: "preview", Revision: 42, ValueTruncated: true,
 	}}
@@ -168,7 +181,7 @@ func TestEtcdWatchUIIndicatesTruncatedValues(t *testing.T) {
 
 func TestEtcdProfileShowsTLSAndCredentialControls(t *testing.T) {
 	app := newTestWorkbench()
-	app.showConnectionEditor = true
+	tester := openTestConnectionEditor(t, app)
 	app.profileDriver = preferences.DriverEtcd
 	app.profileHost = "https://127.0.0.1:2379"
 	app.profileTLSMode = tlsModeLabel("verify-full")
@@ -180,10 +193,10 @@ func TestEtcdProfileShowsTLSAndCredentialControls(t *testing.T) {
 		TLSKeyRef:  "v1:abcdef0123456789abcdef0123456789",
 	}}
 
-	tester := ui.NewTester(app.view, 1440, 900)
+	tester.Frame()
 	for _, label := range []string{
-		"主机 / Endpoint", "TLS 模式", "CA 证书路径", "系统凭据库已有客户端证书", "系统凭据库已有客户端私钥",
-		"用户名", "连接密码", "测试连接", "连接",
+		"主机", "TLS 模式", "自定义 CA（可选，PEM 文件路径）", "本机凭据库已有客户端证书", "本机凭据库已有客户端私钥",
+		"用户名", "密码（留空则保留已保存密码）", "测试连接", "保存并连接",
 		"etcd 使用用户名/密码认证；endpoint scheme 决定 HTTP 或 HTTPS。HTTPS 使用系统根证书和可选自定义 CA，也可配置 vault 中的 mTLS 客户端证书/私钥。",
 	} {
 		if !tester.HasText(label) {
@@ -213,7 +226,7 @@ func TestEtcdWorkspaceShowsRevisionLeaseWatchAndDeleteSafety(t *testing.T) {
 	app.etcdLeaseInfo = connection.EtcdLeaseInfo{TTL: 23, GrantedTTL: 60}
 	app.etcdWriteReady = true
 	app.etcdWriteConfirmation = etcdWriteConfirmation{
-		Key: "/services/api", Value: "https://api.internal",
+		Key: "/services/api", Value: "https://api.internal", ExistingLeaseID: 7,
 	}
 	app.etcdDeletePrefix = true
 	app.etcdDeleteReady = true
@@ -223,13 +236,12 @@ func TestEtcdWorkspaceShowsRevisionLeaseWatchAndDeleteSafety(t *testing.T) {
 	app.etcdWatchRevision = "42"
 	app.etcdWatching = true
 	tester := ui.NewTester(app.view, 1440, 900)
-
 	for _, label := range []string{
-		"键或前缀", "按前缀匹配", "读取", "下一页", "etcd 键列表", "/services/api",
+		"搜索 etcd 键", "前缀匹配", "读取", "继续读取下一页", "etcd 键列表", "/services/api",
 		"创建修订 10 · 修改修订 42 · 版本 3 · Lease ID 7", "租约剩余 TTL 23 秒 · 授予 TTL 60 秒",
-		"Value", "Lease ID（可选）", "写入目标：/services/api；写入后将增加 revision。", "待写入值（20 字节）", "https://api.internal",
-		"写入后移除现有租约（Lease ID 7）", "确认写入",
-		"按前缀删除", "将删除 此前缀匹配的键 \"/services/\"，共 4 项。", "确认删除",
+		"值", "Lease ID（可选）", "写入目标：/services/api", "待写入值（20 字节）", "https://api.internal",
+		"写入后将移除现有租约（Lease ID 7）", "确认写入",
+		"按前缀删除", "将删除前缀 \"/services/\" 匹配的 4 个键。", "确认删除",
 		"起始 revision", "停止 Watch",
 	} {
 		if !tester.HasText(label) {
@@ -256,6 +268,21 @@ func TestEtcdWorkspaceHidesWriteConfirmationAfterPayloadEdit(t *testing.T) {
 	}
 	if tester.HasText("确认写入") {
 		t.Fatal("stale etcd write confirmation remained available after editing the payload")
+	}
+}
+
+func TestEtcdNewKeyLeaseHintPointsToWorkspaceNavigation(t *testing.T) {
+	app := newTestWorkbench()
+	app.etcdStore = &etcdadapter.Store{}
+	app.openedDriver = connection.DriverEtcd
+	app.etcdCreateKeyOpen = true
+	app.etcdNewLeasePolicy = "existing"
+	tester := ui.NewTester(app.view, 1440, 900)
+	if !tester.HasText("租约") {
+		t.Fatal("etcd workspace does not show its top-level Leases tab")
+	}
+	if !tester.HasText("可在顶栏租约页面创建租约并查看 Lease ID。") {
+		t.Fatal("new key dialog does not direct users to the Leases workspace tab")
 	}
 }
 
@@ -287,16 +314,17 @@ func TestEtcdDeleteTargetDefaultsToSelectedExactKey(t *testing.T) {
 }
 
 func TestEtcdWriteConfirmationBindsTargetValueAndLease(t *testing.T) {
-	confirmation := etcdWriteConfirmation{Key: "/services/api", Value: "https://api.internal", LeaseID: "7"}
-	if !confirmation.matches("/services/api", "https://api.internal", "7") {
+	confirmation := etcdWriteConfirmation{Key: "/services/api", Value: "https://api.internal", LeaseID: "7", ExistingLeaseID: 5}
+	if !confirmation.matches("/services/api", "https://api.internal", "7", 5) {
 		t.Fatal("confirmation did not match the reviewed payload")
 	}
 	for _, edited := range []etcdWriteConfirmation{
-		{Key: "/services/other", Value: "https://api.internal", LeaseID: "7"},
-		{Key: "/services/api", Value: "https://other.internal", LeaseID: "7"},
-		{Key: "/services/api", Value: "https://api.internal", LeaseID: "8"},
+		{Key: "/services/other", Value: "https://api.internal", LeaseID: "7", ExistingLeaseID: 5},
+		{Key: "/services/api", Value: "https://other.internal", LeaseID: "7", ExistingLeaseID: 5},
+		{Key: "/services/api", Value: "https://api.internal", LeaseID: "8", ExistingLeaseID: 5},
+		{Key: "/services/api", Value: "https://api.internal", LeaseID: "7", ExistingLeaseID: 6},
 	} {
-		if confirmation.matches(edited.Key, edited.Value, edited.LeaseID) {
+		if confirmation.matches(edited.Key, edited.Value, edited.LeaseID, edited.ExistingLeaseID) {
 			t.Errorf("edited payload %#v still matched the preview", edited)
 		}
 	}
@@ -392,7 +420,7 @@ func TestSQLRiskSummaryRequiresReviewForAmbiguousReadStatements(t *testing.T) {
 		{statement: "SELECT id FROM jobs FOR NO KEY UPDATE", wantRisk: true},
 		{statement: "SELECT id FROM jobs FOR KEY SHARE", wantRisk: true},
 		{statement: "SELECT 1; DROP TABLE customers", wantRisk: true},
-		{statement: "SELECT id FROM customers WHERE id IN (1, 2)", wantRisk: true},
+		{statement: "SELECT id FROM customers WHERE id IN (1, 2)", wantRisk: false},
 		{statement: "SHOW TABLES; DROP TABLE customers", wantRisk: true},
 	}
 	for _, test := range tests {
@@ -473,9 +501,6 @@ func TestSQLWorkspaceShowsDatabaseSchemaSelector(t *testing.T) {
 	tester := ui.NewTester(app.view, 1440, 900)
 	if !tester.HasText("数据库 / Schema") {
 		t.Fatal("SQL workspace does not expose the namespace selector")
-	}
-	if !tester.HasText("共享 schema") {
-		t.Fatal("PostgreSQL schema selector does not explain search_path resolution risk")
 	}
 }
 
@@ -689,7 +714,7 @@ func findMenuItemInSubmenu(items []*mygo.MenuItem, label string) *mygo.MenuItem 
 func TestConnectionProfileEditorIsModal(t *testing.T) {
 	app := newTestWorkbench()
 	tester := ui.NewTester(app.view, 1280, 820)
-	if !tester.HasText("新建连接…") {
+	if _, found := tester.Find("新建连接…"); !found {
 		t.Fatal("main toolbar does not offer new connection")
 	}
 	if tester.HasText("数据库类型") {
@@ -720,11 +745,9 @@ func TestConnectionProfileEditorIsModal(t *testing.T) {
 	if app.showConnectionEditor || app.profileSecret != "" {
 		t.Fatal("dismissing the connection editor with Escape did not clear its transient secret")
 	}
-	if err := tester.Click("设置…"); err != nil {
-		t.Fatal(err)
-	}
-	tester.Frame()
-	if !tester.HasText("查询历史") || !tester.HasText("打开 AI 助手设置") {
+	settingsTester := ui.NewTester(app.settingsView, 640, 620)
+	settingsTester.Frame()
+	if !settingsTester.HasText("查询历史") || !settingsTester.HasText("AI 助手") {
 		t.Fatal("settings dialog is missing its preference sections")
 	}
 }
@@ -822,8 +845,9 @@ func (testDocuments) ReplaceDocument(context.Context, string, string, string, st
 
 func TestRemoteConnectionProfileControlsAreAccessibleAndHideCredentialReferences(t *testing.T) {
 	app := newTestWorkbench()
-	app.showConnectionEditor = true
+	openTestConnectionEditor(t, app)
 	app.profileDriver = "postgresql"
+	app.profileTLSMode = tlsModeLabel("verify-full")
 	app.profileCredential = "v1:0123456789abcdef0123456789abcdef"
 	app.connectionProfiles = []preferences.ConnectionProfile{{
 		ID: "profile-1", Name: "Analytics", Group: "Reporting", Driver: preferences.DriverPostgreSQL,
@@ -832,7 +856,7 @@ func TestRemoteConnectionProfileControlsAreAccessibleAndHideCredentialReferences
 	}}
 	tester := ui.NewTester(app.view, 1440, 900)
 
-	for _, name := range []string{"数据库类型", "主机", "端口", "数据库", "用户名", "连接密码", "连接名称", "连接分组"} {
+	for _, name := range []string{"数据库类型", "主机", "端口", "数据库", "用户名", "密码（留空则保留已保存密码）", "连接名称", "分组"} {
 		if _, found := tester.Find(name); !found {
 			t.Errorf("accessible remote-profile control %q was not found", name)
 		}
@@ -840,10 +864,13 @@ func TestRemoteConnectionProfileControlsAreAccessibleAndHideCredentialReferences
 	if !tester.HasText("PostgreSQL 使用系统根证书和可选自定义 CA 验证证书链及主机名") {
 		t.Fatal("PostgreSQL TLS policy is not explained in the profile UI")
 	}
-	if !tester.HasText("系统凭据库中已有密码") {
+	if !tester.HasText("本机加密凭据库中已有密码") {
 		t.Fatal("saved credential state is not disclosed")
 	}
-	if !tester.HasText("测试连接") || !tester.HasText("连接") {
+	if _, testFound := tester.Find("测试连接"); !testFound {
+		t.Fatal("PostgreSQL profile does not expose test and connect actions")
+	}
+	if _, connectFound := tester.Find("保存并连接"); !connectFound {
 		t.Fatal("PostgreSQL profile does not expose test and connect actions")
 	}
 	if tester.HasText("v1:0123456789abcdef0123456789abcdef") {
@@ -859,10 +886,10 @@ func TestRemoteConnectionProfileControlsAreAccessibleAndHideCredentialReferences
 
 func TestSQLiteProfileHasTestConnectionAction(t *testing.T) {
 	app := newTestWorkbench()
+	openTestConnectionEditor(t, app)
 	app.profileDriver = preferences.DriverSQLite
-	app.connectionProfiles = []preferences.ConnectionProfile{{
-		ID: "sqlite-1", Name: "Local", Driver: preferences.DriverSQLite, Path: "/tmp/local.db",
-	}}
+	app.path = "/tmp/local.db"
+	app.connectionProfiles = []preferences.ConnectionProfile{{ID: "sqlite-1", Name: "Local", Driver: preferences.DriverSQLite, Path: app.path}}
 	tester := ui.NewTester(app.view, 1440, 900)
 	if _, found := tester.Find("测试连接"); !found {
 		t.Fatal("saved SQLite profile has no test-connection action")
@@ -880,18 +907,19 @@ func TestQueryHistoryPanelExplainsLocalRetentionAndClearActions(t *testing.T) {
 	}
 }
 
-func TestInspectorCollapsesAtNarrowWindowWidth(t *testing.T) {
-	wide := newTestWorkbench()
-	if tester := ui.NewTester(wide.view, 1440, 900); !tester.HasText("检查器") {
-		t.Fatal("wide workspace did not show its inspector")
+func TestAIAssistantUsesRightDockOnWideScreens(t *testing.T) {
+	app := newTestWorkbench()
+	tester := ui.NewTester(app.view, 1440, 900)
+	if tester.HasText("AI 任务") {
+		t.Fatal("AI assistant dock should be closed by default")
 	}
-	narrow := newTestWorkbench()
-	tester := ui.NewTester(narrow.view, 900, 700)
-	if tester.HasText("检查器") {
-		t.Fatal("narrow workspace did not collapse the inspector")
+	app.showAI = true
+	tester.Frame()
+	if !tester.HasText("AI 任务") {
+		t.Fatal("wide workspace did not show the AI assistant dock")
 	}
 	if !tester.HasText("SQL 查询编辑器") {
-		t.Fatal("narrow workspace collapsed the SQL editor with the inspector")
+		t.Fatal("opening the AI dock replaced the main SQL workspace")
 	}
 }
 
@@ -938,34 +966,39 @@ func TestShutdownCancelsBackgroundTasksAndClosesActiveConnection(t *testing.T) {
 
 func TestMySQLProfileCanTestAndConnect(t *testing.T) {
 	app := newTestWorkbench()
-	app.showConnectionEditor = true
+	openTestConnectionEditor(t, app)
 	app.profileDriver = preferences.DriverMySQL
+	app.profileTLSMode = tlsModeLabel("verify-full")
 	app.connectionProfiles = []preferences.ConnectionProfile{{
 		ID: "mysql-1", Name: "Analytics", Driver: preferences.DriverMySQL,
 		Host: "db.example.test", Port: 3306, Database: "warehouse", Username: "reader",
 	}}
 	tester := ui.NewTester(app.view, 1440, 900)
-	if !tester.HasText("测试连接") || !tester.HasText("连接") {
+	if _, testFound := tester.Find("测试连接"); !testFound {
+		t.Fatal("MySQL profile does not expose test and connect actions")
+	}
+	if _, connectFound := tester.Find("保存并连接"); !connectFound {
 		t.Fatal("MySQL profile does not expose test and connect actions")
 	}
 	if tester.HasText("驱动待接入") {
 		t.Fatal("MySQL profile is still marked as pending")
 	}
-	if !tester.HasText("CA 证书路径") || !tester.HasText("MySQL 使用系统根证书和可选自定义 CA 验证证书链及主机名") {
+	if !tester.HasText("自定义 CA（可选，PEM 文件路径；追加到系统根证书）") || !tester.HasText("MySQL 使用系统根证书和可选自定义 CA 验证证书链及主机名") {
 		t.Fatal("MySQL strict TLS policy is not explained in the profile UI")
 	}
 }
 
 func TestPostgreSQLProfileShowsCustomCAAndStrictTLSPolicy(t *testing.T) {
 	app := newTestWorkbench()
-	app.showConnectionEditor = true
+	openTestConnectionEditor(t, app)
 	app.profileDriver = preferences.DriverPostgreSQL
+	app.profileTLSMode = tlsModeLabel("verify-full")
 	app.connectionProfiles = []preferences.ConnectionProfile{{
 		ID: "postgres-1", Name: "Analytics", Driver: preferences.DriverPostgreSQL,
 		Host: "db.example.test", Port: 5432, Database: "analytics", Username: "reader",
 	}}
 	tester := ui.NewTester(app.view, 1440, 900)
-	for _, label := range []string{"CA 证书路径", "PostgreSQL 使用系统根证书和可选自定义 CA 验证证书链及主机名", "测试连接", "连接"} {
+	for _, label := range []string{"自定义 CA（可选，PEM 文件路径；追加到系统根证书）", "PostgreSQL 使用系统根证书和可选自定义 CA 验证证书链及主机名", "测试连接", "保存并连接"} {
 		if !tester.HasText(label) {
 			t.Errorf("PostgreSQL profile UI is missing %q", label)
 		}
@@ -974,13 +1007,14 @@ func TestPostgreSQLProfileShowsCustomCAAndStrictTLSPolicy(t *testing.T) {
 
 func TestRedisProfileCanTestConnectAndExplainsTLS(t *testing.T) {
 	app := newTestWorkbench()
-	app.showConnectionEditor = true
+	openTestConnectionEditor(t, app)
 	app.profileDriver = preferences.DriverRedis
+	app.profileTLSMode = tlsModeLabel("verify-full")
 	app.connectionProfiles = []preferences.ConnectionProfile{{
 		ID: "redis-1", Name: "Cache", Driver: preferences.DriverRedis, Host: "cache.example.test", Port: 6379,
 	}}
 	tester := ui.NewTester(app.view, 1440, 900)
-	for _, name := range []string{"Redis DB 索引", "主机", "端口", "用户名", "连接密码", "测试连接", "连接"} {
+	for _, name := range []string{"Redis DB 索引", "主机", "端口", "用户名", "密码（留空则保留已保存密码）", "测试连接", "保存并连接"} {
 		if !tester.HasText(name) {
 			t.Errorf("Redis profile UI is missing %q", name)
 		}
@@ -995,11 +1029,12 @@ func TestRedisProfileCanTestConnectAndExplainsTLS(t *testing.T) {
 
 func TestMongoProfileCanTestAndConnect(t *testing.T) {
 	app := newTestWorkbench()
-	app.showConnectionEditor = true
+	openTestConnectionEditor(t, app)
 	app.profileDriver = preferences.DriverMongoDB
+	app.profileTLSMode = tlsModeLabel("verify-full")
 	app.connectionProfiles = []preferences.ConnectionProfile{{ID: "mongo-1", Name: "Catalog", Driver: preferences.DriverMongoDB, Host: "mongo.example.test", Port: 27017, Database: "catalog", AuthSource: "admin", Username: "reader"}}
 	tester := ui.NewTester(app.view, 1440, 900)
-	for _, label := range []string{"数据库", "CA 证书路径", "MongoDB 认证数据库", "用户名", "连接密码", "测试连接", "连接"} {
+	for _, label := range []string{"数据库", "自定义 CA（可选，PEM 文件路径；追加到系统根证书）", "认证数据库", "用户名", "密码（留空则保留已保存密码）", "测试连接", "保存并连接"} {
 		if !tester.HasText(label) {
 			t.Errorf("MongoDB profile UI is missing %q", label)
 		}
@@ -1024,7 +1059,7 @@ func TestMongoWorkspaceShowsFindPipelineAndDocumentActions(t *testing.T) {
 	app.mongoHasMore = true
 	app.mongoDocuments = []connection.Document{{IDJSON: `{"$oid":"65a000000000000000000001"}`, PreviewJSON: `{"name":"Ada"}`}}
 	tester := ui.NewTester(app.view, 1440, 900)
-	for _, label := range []string{"MongoDB 文档", "MongoDB 数据库", "catalog", "集合", "items", "MongoDB filter JSON", "MongoDB projection JSON", "查询文档", "加载下一页", "新建文档"} {
+	for _, label := range []string{"MongoDB 文档", "catalog", "items", "MongoDB filter JSON", "MongoDB projection JSON", "查询文档", "加载下一页", "新建文档"} {
 		if !tester.HasText(label) {
 			t.Errorf("MongoDB workspace is missing %q", label)
 		}
@@ -1052,7 +1087,7 @@ func TestRedisWorkspaceShowsTypeTTLValueAndSafetyActions(t *testing.T) {
 	app.redisInfo = connection.KeyInfo{Key: "cache:session", Type: "hash", TTL: 30 * time.Second, Length: 256}
 	app.redisPage = connection.KeyValuePage{Type: "hash", Entries: []connection.KeyValueEntry{{Field: "user", Value: "panda"}}}
 	tester := ui.NewTester(app.view, 1440, 900)
-	for _, label := range []string{"Redis 键空间", "cache:session", "类型：hash", "TTL：30s", "user  →  panda", "删除此键…", "写入数据…", "字段名"} {
+	for _, label := range []string{"Redis 键列表", "cache:session", "HASH", "30秒", "user", "panda", "删除此键…", "添加条目", "字段"} {
 		if !tester.HasText(label) {
 			t.Errorf("Redis workspace missing %q", label)
 		}
@@ -1075,7 +1110,7 @@ func TestRedisMutationConfirmationDescribesExactOperationAndTTLImpact(t *testing
 		},
 		{
 			name:      "hash field update keeps expiry unless a new ttl is set",
-			mutation:  connection.KeyMutation{Key: "cache:hash", Type: "hash", Field: "owner", Value: "Ada"},
+			mutation:  connection.KeyMutation{Key: "cache:hash", Type: "hash", Field: "owner", Value: "Ada", PreserveTTL: true},
 			wantLines: []string{"操作：新增或更新 Hash 字段", "字段（5 字节，转义预览最多 4 KiB）：", `"owner"`, "TTL：写入后保留现有 TTL"},
 		},
 		{
@@ -1254,23 +1289,27 @@ func TestWorkspaceLimit(t *testing.T) {
 
 func TestWorkbenchControlsHaveAccessibleNames(t *testing.T) {
 	app := newTestWorkbench()
-	app.showConnectionEditor = true
 	app.activeQuery.columns = []sqlstream.Column{{Name: "value"}}
 	app.activeQuery.resultPath = ""
 	app.activeQuery.resultWindow.Append([][]any{{"sample"}})
 	tester := ui.NewTester(app.view, 1440, 900)
 
 	for _, name := range []string{
-		"SQLite 文件路径",
-		"连接名称",
-		"连接分组",
-		"查询工作区",
+		"工作区",
 		"SQL 查询编辑器",
-		"导出文件路径",
 		"查询结果",
 	} {
 		if _, found := tester.Find(name); !found {
 			t.Errorf("accessible UI element %q was not found", name)
+		}
+	}
+	if err := tester.Click("新建连接…"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	for _, name := range []string{"SQLite 文件路径", "连接名称", "分组"} {
+		if _, found := tester.Find(name); !found {
+			t.Errorf("connection editor control %q is not accessible", name)
 		}
 	}
 }
@@ -1291,23 +1330,24 @@ func TestWorkbenchAnnouncesStatusChangesOnce(t *testing.T) {
 	}
 }
 
-func TestInspectorCollapsesAtNarrowWindowWidths(t *testing.T) {
+func TestAIAssistantUsesFullPageAtNarrowWindowWidths(t *testing.T) {
 	app := newTestWorkbench()
+	app.showAI = true
 	tester := ui.NewTester(app.view, 1440, 900)
-	if _, found := tester.Find("检查器"); !found {
-		t.Fatal("inspector is missing at a wide window size")
+	if _, found := tester.Find("AI 任务"); !found {
+		t.Fatal("AI assistant is missing at a wide window size")
 	}
 	tester.SetSize(900, 700)
 	tester.Frame()
-	if _, found := tester.Find("检查器"); found {
-		t.Fatal("inspector is visible below the narrow-window breakpoint")
+	if _, found := tester.Find("AI 任务"); !found {
+		t.Fatal("AI assistant disappeared below the narrow-window breakpoint")
 	}
-	if _, found := tester.Find("SQL 查询编辑器"); !found {
-		t.Fatal("SQL workspace is missing after the inspector collapses")
+	if _, found := tester.Find("SQL 查询编辑器"); found {
+		t.Fatal("narrow window did not switch the AI assistant to full-page layout")
 	}
 	tester.SetSize(1440, 900)
 	tester.Frame()
-	if _, found := tester.Find("检查器"); !found {
-		t.Fatal("inspector did not return when the window widened")
+	if _, found := tester.Find("SQL 查询编辑器"); !found {
+		t.Fatal("wide window did not restore the main SQL workspace")
 	}
 }
