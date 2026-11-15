@@ -46,6 +46,15 @@ func (provider OpenAICompatible) Stream(ctx context.Context, messages []Message,
 	if endpoint.Scheme != "https" && endpoint.Hostname() != "localhost" && endpoint.Hostname() != "127.0.0.1" && endpoint.Hostname() != "::1" {
 		return errors.New("AI endpoint must use HTTPS except for localhost providers")
 	}
+	// Accept the API base URL as well as a full chat endpoint.
+	endpoint.Path = strings.TrimRight(endpoint.Path, "/")
+	if endpoint.Path == "" {
+		endpoint.Path = "/v1"
+	}
+	if strings.HasSuffix(endpoint.Path, "/v1") {
+		endpoint.Path += "/chat/completions"
+		endpoint.RawPath = ""
+	}
 	payload := struct {
 		Model    string    `json:"model"`
 		Stream   bool      `json:"stream"`
@@ -55,7 +64,7 @@ func (provider OpenAICompatible) Stream(ctx context.Context, messages []Message,
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, provider.Endpoint, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(body))
 	if err != nil {
 		return errors.New("invalid AI endpoint")
 	}

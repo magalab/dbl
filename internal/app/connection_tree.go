@@ -75,7 +75,7 @@ func (app *workbench) profileConnectionTreeResources(c *ui.Context, profile pref
 	live, ok := app.liveConnections[id]
 	if !ok || live.connection == nil {
 		if app.treeConnectionLoading[profile.ID] {
-			ui.Text(c, app.localized("正在连接…")).TextColor(c.Theme().TextMuted)
+			app.connectionTreeLoadingStatus(c, "正在连接…")
 		} else if app.treeConnectionErrors[profile.ID] != "" {
 			ui.Text(c, app.localized("连接失败：")+app.treeConnectionErrors[profile.ID]).TextColor(c.Theme().Danger)
 		} else {
@@ -91,7 +91,7 @@ func (app *workbench) profileConnectionTreeResources(c *ui.Context, profile pref
 		if message := app.treeConnectionErrors[profile.ID]; message != "" {
 			ui.Text(c, app.localized("加载对象失败：")+message).TextColor(c.Theme().Danger)
 		} else {
-			ui.Text(c, app.localized("正在加载对象…")).TextColor(c.Theme().TextMuted)
+			app.connectionTreeLoadingStatus(c, "正在加载对象…")
 		}
 		return
 	}
@@ -136,6 +136,14 @@ func (app *workbench) profileConnectionTreeResources(c *ui.Context, profile pref
 	default:
 		ui.Text(c, app.localized("连接后显示对象")).TextColor(c.Theme().TextMuted)
 	}
+}
+
+func (app *workbench) connectionTreeLoadingStatus(c *ui.Context, label string) {
+	label = app.localized(label)
+	ui.Row(c).Gap(6).AlignItems(ui.Center).Tooltip(label).Children(func() {
+		ui.Spinner(c).Size(14, 14).Label(label)
+		ui.Text(c, label).TextColor(c.Theme().TextMuted)
+	})
 }
 
 func (app *workbench) profileSQLTree(c *ui.Context, profile preferences.ConnectionProfile, id string, snapshot connectionTreeSnapshot, depth int) {

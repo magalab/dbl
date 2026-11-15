@@ -115,7 +115,7 @@ func TestDeleteUnusedCredentialsAttemptsEveryUniqueUnreferencedItem(t *testing.T
 	}
 }
 
-func TestAIRequestDefaultsToPromptOnlyAndRequiresReview(t *testing.T) {
+func TestAIRequestPreparationDefaultsToPromptOnly(t *testing.T) {
 	app := newAIRequestWorkbench()
 	app.activeQuery.query.Buffer.Set("SELECT 'sensitive row value'")
 	app.errorSummary = "password=sensitive-error-detail"
@@ -558,15 +558,16 @@ func TestApplyAIPromptTemplateCanBeEditedAfterInsertion(t *testing.T) {
 func TestAIWorkspaceUsesMultilinePromptEditorAndTemplates(t *testing.T) {
 	app := newTestWorkbench()
 	app.showAI = true
+	app.aiOptionsExpanded = true
 	tester := ui.NewTester(app.view, 1440, 1200)
-	for _, label := range []string{"提示模板", "应用提示模板", "提示"} {
+	for _, label := range []string{"提示模板", "应用", "提示"} {
 		if !tester.HasText(label) {
 			t.Errorf("AI workspace does not expose %q", label)
 		}
 	}
 }
 
-func TestAIRegenerationReusesReviewedPayloadAndRequiresReviewAgain(t *testing.T) {
+func TestAIRegenerationPreparationReusesMessages(t *testing.T) {
 	app := newAIRequestWorkbench()
 	app.aiPrompt = "Original request"
 	app.aiPreparedMessages = []assistant.Message{{Role: "system", Content: "system"}, {Role: "user", Content: "Original request plus explicitly selected context"}}
@@ -910,12 +911,12 @@ func TestQueryHistoryPanelExplainsLocalRetentionAndClearActions(t *testing.T) {
 func TestAIAssistantUsesRightDockOnWideScreens(t *testing.T) {
 	app := newTestWorkbench()
 	tester := ui.NewTester(app.view, 1440, 900)
-	if tester.HasText("AI 任务") {
+	if tester.HasText("任务与上下文") {
 		t.Fatal("AI assistant dock should be closed by default")
 	}
 	app.showAI = true
 	tester.Frame()
-	if !tester.HasText("AI 任务") {
+	if !tester.HasText("任务与上下文") {
 		t.Fatal("wide workspace did not show the AI assistant dock")
 	}
 	if !tester.HasText("SQL 查询编辑器") {
@@ -1334,12 +1335,12 @@ func TestAIAssistantUsesFullPageAtNarrowWindowWidths(t *testing.T) {
 	app := newTestWorkbench()
 	app.showAI = true
 	tester := ui.NewTester(app.view, 1440, 900)
-	if _, found := tester.Find("AI 任务"); !found {
+	if _, found := tester.Find("任务与上下文"); !found {
 		t.Fatal("AI assistant is missing at a wide window size")
 	}
 	tester.SetSize(900, 700)
 	tester.Frame()
-	if _, found := tester.Find("AI 任务"); !found {
+	if _, found := tester.Find("任务与上下文"); !found {
 		t.Fatal("AI assistant disappeared below the narrow-window breakpoint")
 	}
 	if _, found := tester.Find("SQL 查询编辑器"); found {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/google/uuid"
 	"github.com/magalab/dbl/internal/assistant"
 	"github.com/magalab/dbl/internal/credentials"
 	"github.com/magalab/dbl/internal/preferences"
@@ -25,7 +26,7 @@ func (app *workbench) aiWorkspace(c *ui.Context) {
 }
 
 func (app *workbench) aiDockedWorkspace(c *ui.Context) {
-	ui.Column(c).Fill().Gap(8).Children(func() {
+	ui.Column(c).Fill().Gap(5).Children(func() {
 		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, app.localized("AI 助手")).Bold().Role(ui.RoleHeading).Level(2).Grow(1).SingleLine()
 			configure := iconButton(c, app.localized("打开 AI 助手设置"), actionIcons["settings"])
@@ -45,82 +46,94 @@ func (app *workbench) aiDockedWorkspace(c *ui.Context) {
 			}
 		})
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-			ui.Column(c).Gap(10).Padding(2, 2, 8, 2).Children(func() {
-				state := "AI 助手未启用"
-				if app.aiSettings.Enabled {
-					state = "AI 助手已启用"
-				}
-				ui.Text(c, app.localized(state)+" · "+app.localized("生成内容仅作为草稿，不会自动执行。")).TextColor(c.Theme().TextMuted)
-				ui.Text(c, app.localized("默认不发送 SQL、schema、错误、filter、键名、文档或配置值。所有上下文都要逐项勾选；请求前请检查内容。HTTP 仅允许 localhost provider。 ")).TextColor(c.Theme().TextMuted)
-
-				modes := []string{"生成 SQL", "解释 SQL", "解释错误", "生成 Mongo Filter", "生成 Mongo Pipeline", "Redis 操作建议", "etcd 操作建议"}
-				modeOptions := make([]string, len(modes))
-				for i, mode := range modes {
-					modeOptions[i] = app.localized(mode)
-				}
-				selectedMode := app.localized(app.aiMode)
-				mode := ui.Select(c, &selectedMode, modeOptions).Label(app.localized("AI 任务"))
-				mode.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.dialogOpen)
-				for i, option := range modeOptions {
-					if selectedMode == option {
-						app.aiMode = modes[i]
-						break
+			ui.Column(c).Gap(5).Padding(0, 0, 4, 0).Children(func() {
+				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+					app.aiProviderPicker(c, false)
+					app.aiWorkspaceModelSelector(c)
+				})
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
+					ui.Text(c, app.localized("任务与上下文")).Role(ui.RoleHeading).Level(3).Grow(1)
+					icon := actionIcons["chevronDown"]
+					label := "展开任务与上下文"
+					if app.aiOptionsExpanded {
+						icon = actionIcons["chevronUp"]
+						label = "收起任务与上下文"
 					}
-				}
-
-				templates := promptTemplatesForMode(app.aiMode)
-				templateNames := make([]string, len(templates))
-				templateOptions := make([]string, len(templates))
-				for i, template := range templates {
-					templateNames[i], templateOptions[i] = template.Name, app.localized(template.Name)
-				}
-				if !slices.Contains(templateNames, app.aiPromptTemplate) {
-					app.aiPromptTemplate = templateNames[0]
-				}
-				selectedTemplate := app.localized(app.aiPromptTemplate)
-				templateSelect := ui.Select(c, &selectedTemplate, templateOptions).Label(app.localized("提示模板"))
-				templateSelect.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
-				for i, option := range templateOptions {
-					if selectedTemplate == option {
-						app.aiPromptTemplate = templateNames[i]
-						break
+					toggle := iconButton(c, app.localized(label), icon).Size(28, 28).Padding(4)
+					if toggle.Clicked() {
+						app.aiOptionsExpanded = !app.aiOptionsExpanded
 					}
-				}
-				applyTemplate := ui.Button(c, app.localized("应用提示模板"))
-				applyTemplate.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
-				if applyTemplate.Clicked() {
-					app.applyAIPromptTemplate()
-				}
+				})
+				if app.aiOptionsExpanded {
 
-				if app.store != nil {
-					include := ui.Checkbox(c, &app.aiIncludeSQL, app.localized("明确发送当前 SQL 编辑器内容"))
-					include.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
-					includeError := ui.Checkbox(c, &app.aiIncludeError, app.localized("明确发送当前错误摘要和技术详情"))
-					includeError.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
-					if app.selectedObject != "" {
-						includeSchema := ui.Checkbox(c, &app.aiIncludeSchema, app.localized("明确发送当前选中对象的 schema/列元数据"))
-						includeSchema.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
+					modes := []string{"生成 SQL", "解释 SQL", "解释错误", "生成 Mongo Filter", "生成 Mongo Pipeline", "Redis 操作建议", "etcd 操作建议"}
+					modeOptions := make([]string, len(modes))
+					for i, mode := range modes {
+						modeOptions[i] = app.localized(mode)
 					}
-				}
-				if app.documentStore != nil {
-					include := ui.Checkbox(c, &app.aiIncludeMongoQuery, app.localized("明确发送当前数据库/集合及 filter/projection/pipeline 文本（不含文档）"))
-					include.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || app.mongoSelectedColl == "")
-				}
-				if app.keyStore != nil {
-					include := ui.Checkbox(c, &app.aiIncludeRedisMeta, app.localized("明确发送当前 Redis 键的类型/TTL/长度（不含值）"))
-					include.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || app.redisSelectedKey == "")
-				}
-				if app.etcdStore != nil {
-					include := ui.Checkbox(c, &app.aiIncludeEtcdMeta, app.localized("明确发送当前 etcd 键的修订/版本/Lease TTL 元数据（不含值）"))
-					include.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || app.etcdSelectedKey == "")
-				}
-
-				if app.aiPrepared && app.aiPreview != "" {
-					ui.Column(c).Padding(8).Gap(6).Background(c.Theme().Background).Border(1, c.Theme().Border).Radius(c.Theme().Radius).Children(func() {
-						ui.Text(c, app.localized("以下是发送的 system/user 消息和目标模型。API key 只在 Authorization header 中，不显示在此预览。确认后才会联网。 ")).TextColor(c.Theme().TextMuted)
-						ui.Text(c, app.localized("请求尚未发送。检查下方实际消息内容与目标 provider 后，再确认发送。")).Bold()
-						ui.Text(c, fmt.Sprintf("Endpoint: %s\nModel: %s\nPayload:\n%s", app.aiPreparedSettings.Endpoint, app.aiPreparedSettings.Model, app.aiPreview)).Selectable()
+					selectedMode := app.localized(app.aiMode)
+					ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
+						mode := ui.Select(c, &selectedMode, modeOptions).Label(app.localized("AI 任务")).Grow(1).MinWidth(0)
+						mode.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.dialogOpen)
+						templates := promptTemplatesForMode(app.aiMode)
+						templateNames := make([]string, len(templates))
+						templateOptions := make([]string, len(templates))
+						for i, template := range templates {
+							templateNames[i], templateOptions[i] = template.Name, app.localized(template.Name)
+						}
+						if !slices.Contains(templateNames, app.aiPromptTemplate) {
+							app.aiPromptTemplate = templateNames[0]
+						}
+						selectedTemplate := app.localized(app.aiPromptTemplate)
+						templateSelect := ui.Select(c, &selectedTemplate, templateOptions).Label(app.localized("提示模板")).Grow(1).MinWidth(0)
+						templateSelect.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
+						for i, option := range templateOptions {
+							if selectedTemplate == option {
+								app.aiPromptTemplate = templateNames[i]
+								break
+							}
+						}
+						applyTemplate := ui.Button(c, app.localized("应用")).Padding(4, 8)
+						applyTemplate.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
+						if applyTemplate.Clicked() {
+							app.applyAIPromptTemplate()
+						}
 					})
+					for i, option := range modeOptions {
+						if selectedMode == option {
+							app.aiMode = modes[i]
+							break
+						}
+					}
+
+					if app.store != nil {
+						include := ui.Checkbox(c, &app.aiIncludeSQL, app.localized("明确发送当前 SQL 编辑器内容"))
+						include.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
+						includeError := ui.Checkbox(c, &app.aiIncludeError, app.localized("明确发送当前错误摘要和技术详情"))
+						includeError.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
+						if app.selectedObject != "" {
+							includeSchema := ui.Checkbox(c, &app.aiIncludeSchema, app.localized("明确发送当前选中对象的 schema/列元数据"))
+							includeSchema.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
+						}
+					}
+					if app.documentStore != nil {
+						include := ui.Checkbox(c, &app.aiIncludeMongoQuery, app.localized("明确发送当前数据库/集合及 filter/projection/pipeline 文本（不含文档）"))
+						include.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || app.mongoSelectedColl == "")
+					}
+					if app.keyStore != nil {
+						include := ui.Checkbox(c, &app.aiIncludeRedisMeta, app.localized("明确发送当前 Redis 键的类型/TTL/长度（不含值）"))
+						include.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || app.redisSelectedKey == "")
+					}
+					if app.etcdStore != nil {
+						include := ui.Checkbox(c, &app.aiIncludeEtcdMeta, app.localized("明确发送当前 etcd 键的修订/版本/Lease TTL 元数据（不含值）"))
+						include.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || app.etcdSelectedKey == "")
+					}
+
+				}
+
+				if app.aiRequestError != "" {
+					ui.Text(c, app.localized("AI 请求失败")).TextColor(c.Theme().Danger).Bold()
+					ui.Text(c, app.aiRequestError).TextColor(c.Theme().TextMuted).Selectable()
 				}
 				if app.aiResponse != "" {
 					ui.Text(c, app.localized("AI 回答")).Bold().Role(ui.RoleHeading).Level(3)
@@ -131,6 +144,7 @@ func (app *workbench) aiDockedWorkspace(c *ui.Context) {
 							regenerate.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || !app.aiSettings.Enabled || app.aiSettingsDirty())
 							if regenerate.Clicked() {
 								app.prepareAIRegeneration()
+								app.sendPreparedAI()
 							}
 						}
 						copyResponse := ui.Button(c, app.localized("复制 AI 回答"))
@@ -176,23 +190,14 @@ func (app *workbench) aiDockedWorkspace(c *ui.Context) {
 			prompt := ui.TextArea(c, &app.aiPrompt).Lines(3, 5).FillWidth().Placeholder(app.localized("写下你的问题或目标，也可从上方插入模板")).Label(app.localized("提示"))
 			prompt.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
 			ui.Row(c).Gap(6).Children(func() {
-				if app.aiPrepared {
-					send := iconPrimaryButton(c, app.localized("确认发送此请求"), actionIcons["play"])
-					send.Disabled(app.aiRunning || app.busy || app.exporting || app.dialogOpen)
-					if send.Clicked() {
-						app.sendPreparedAI()
-					}
-					discard := ui.Button(c, app.localized("丢弃预览"))
-					if discard.Clicked() {
-						app.discardPreparedAI()
-					}
-				} else {
-					prepare := iconPrimaryButton(c, app.localized("准备请求并检查内容"), actionIcons["sparkle"])
-					prepare.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || !app.aiSettings.Enabled || app.aiSettingsDirty())
-					if prepare.Clicked() {
-						app.askAI()
-					}
+				ui.Spacer(c)
+				send := iconPrimaryButton(c, app.localized("发送消息"), actionIcons["play"])
+				send.Disabled(app.aiRunning || app.busy || app.exporting || app.dialogOpen || !app.aiSettings.Enabled || app.aiSettingsDirty() || strings.TrimSpace(app.aiPrompt) == "")
+				if send.Clicked() {
+					app.askAI()
+					app.sendPreparedAI()
 				}
+
 				if app.aiRunning {
 					cancel := ui.Button(c, app.localized("取消"))
 					if cancel.Clicked() && app.aiCancel != nil {
@@ -205,181 +210,31 @@ func (app *workbench) aiDockedWorkspace(c *ui.Context) {
 }
 
 func (app *workbench) aiFullPageWorkspace(c *ui.Context) {
-	ui.Row(c).Padding(8, 12).Gap(10).Children(func() {
-		ui.Text(c, app.localized("AI 助手")).Bold().Role(ui.RoleHeading).Level(1)
-		ui.Text(c, app.localized("生成内容仅作为草稿，不会自动执行。")).TextColor(c.Theme().TextMuted)
-	})
-	ui.Scroll(c).Fill().Children(func() {
-		ui.Column(c).Padding(14).Gap(8).Children(func() {
-			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-				ui.Column(c).Grow(1).Gap(4).Children(func() {
-					ui.Text(c, app.localized("云端兼容 provider")).Bold().Role(ui.RoleHeading).Level(2)
-					state := "AI 助手未启用"
-					if app.aiSettings.Enabled {
-						state = "AI 助手已启用"
-					}
-					ui.Text(c, app.localized(state)).TextColor(c.Theme().TextMuted)
-				})
-				if ui.Button(c, app.localized("配置…")).Clicked() {
-					app.openAISettings()
-				}
-			})
-			ui.Text(c, app.localized("默认不发送 SQL、schema、错误、filter、键名、文档或配置值。所有上下文都要逐项勾选；请求前请检查内容。HTTP 仅允许 localhost provider。 ")).TextColor(c.Theme().TextMuted)
-			ui.Text(c, app.localized("请求")).Role(ui.RoleHeading).Level(2)
-			modes := []string{"生成 SQL", "解释 SQL", "解释错误", "生成 Mongo Filter", "生成 Mongo Pipeline", "Redis 操作建议", "etcd 操作建议"}
-			modeOptions := make([]string, len(modes))
-			for i, mode := range modes {
-				modeOptions[i] = app.localized(mode)
-			}
-			selectedMode := app.localized(app.aiMode)
-			mode := ui.Select(c, &selectedMode, modeOptions).Label(app.localized("AI 任务"))
-			mode.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.dialogOpen)
-			for i, option := range modeOptions {
-				if selectedMode == option {
-					app.aiMode = modes[i]
-					break
-				}
-			}
-			templates := promptTemplatesForMode(app.aiMode)
-			templateNames := make([]string, len(templates))
-			templateOptions := make([]string, len(templates))
-			for i, template := range templates {
-				templateNames[i] = template.Name
-				templateOptions[i] = app.localized(template.Name)
-			}
-			if !slices.Contains(templateNames, app.aiPromptTemplate) {
-				app.aiPromptTemplate = templateNames[0]
-			}
-			selectedTemplate := app.localized(app.aiPromptTemplate)
-			templateSelect := ui.Select(c, &selectedTemplate, templateOptions).Label(app.localized("提示模板"))
-			templateSelect.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
-			for i, option := range templateOptions {
-				if selectedTemplate == option {
-					app.aiPromptTemplate = templateNames[i]
-					break
-				}
-			}
-			ui.Row(c).Gap(8).Children(func() {
-				applyTemplate := ui.Button(c, app.localized("应用提示模板"))
-				applyTemplate.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
-				if applyTemplate.Clicked() {
-					app.applyAIPromptTemplate()
-				}
-			})
-			prompt := ui.TextArea(c, &app.aiPrompt).Lines(3, 8).FillWidth().Placeholder(app.localized("写下你的问题或目标，也可从上方插入模板")).Label(app.localized("提示"))
-			prompt.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
-			includeSQL := ui.Checkbox(c, &app.aiIncludeSQL, app.localized("明确发送当前 SQL 编辑器内容"))
-			includeSQL.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
-			includeError := ui.Checkbox(c, &app.aiIncludeError, app.localized("明确发送当前错误摘要和技术详情"))
-			includeError.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen)
-			if app.store != nil {
-				includeSchema := ui.Checkbox(c, &app.aiIncludeSchema, app.localized("明确发送当前选中对象的 schema/列元数据"))
-				includeSchema.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || app.selectedObject == "")
-			}
-			if app.documentStore != nil {
-				includeMongo := ui.Checkbox(c, &app.aiIncludeMongoQuery, app.localized("明确发送当前数据库/集合及 filter/projection/pipeline 文本（不含文档）"))
-				includeMongo.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || app.mongoSelectedColl == "")
-			}
-			if app.keyStore != nil {
-				includeRedis := ui.Checkbox(c, &app.aiIncludeRedisMeta, app.localized("明确发送当前 Redis 键的类型/TTL/长度（不含值）"))
-				includeRedis.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || app.redisSelectedKey == "")
-			}
-			if app.etcdStore != nil {
-				includeEtcd := ui.Checkbox(c, &app.aiIncludeEtcdMeta, app.localized("明确发送当前 etcd 键的修订/版本/Lease TTL 元数据（不含值）"))
-				includeEtcd.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || app.etcdSelectedKey == "")
-			}
-			ui.Row(c).Gap(8).Children(func() {
-				if app.aiPrepared {
-					send := ui.PrimaryButton(c, app.localized("确认发送此请求"))
-					send.Disabled(app.aiRunning || app.busy || app.exporting || app.dialogOpen)
-					if send.Clicked() {
-						app.sendPreparedAI()
-					}
-					discard := ui.Button(c, app.localized("丢弃预览"))
-					if discard.Clicked() {
-						app.discardPreparedAI()
-					}
-				} else {
-					prepare := ui.PrimaryButton(c, app.localized("准备请求并检查内容"))
-					prepare.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || !app.aiSettings.Enabled || app.aiSettingsDirty())
-					if prepare.Clicked() {
-						app.askAI()
-					}
-				}
-				if app.aiRunning {
-					cancel := ui.Button(c, app.localized("取消"))
-					if cancel.Clicked() && app.aiCancel != nil {
-						app.aiCancel()
-					}
-				}
-				clearContent := ui.Button(c, app.localized("清空 AI 内容"))
-				clearContent.Disabled(app.aiRunning)
-				if clearContent.Clicked() {
-					app.clearAIContent()
-				}
-			})
-			if app.aiPreview != "" {
-				ui.Text(c, app.localized("以下是发送的 system/user 消息和目标模型。API key 只在 Authorization header 中，不显示在此预览。确认后才会联网。 ")).TextColor(c.Theme().TextMuted)
-				ui.Text(c, fmt.Sprintf("Endpoint: %s\nModel: %s\nPayload:\n%s", app.aiPreparedSettings.Endpoint, app.aiPreparedSettings.Model, app.aiPreview)).Selectable()
-			}
-			if app.aiResponse != "" {
-				if len(app.aiPreparedMessages) > 0 && app.aiPreparedSettings.Enabled {
-					regenerate := ui.Button(c, app.localized("按上次请求重新生成"))
-					regenerate.Disabled(app.aiRunning || app.aiPrepared || app.busy || app.exporting || app.dialogOpen || !app.aiSettings.Enabled || app.aiSettingsDirty())
-					if regenerate.Clicked() {
-						app.prepareAIRegeneration()
-					}
-				}
-				copyResponse := ui.Button(c, app.localized("复制 AI 回答"))
-				copyResponse.Disabled(app.aiRunning || app.busy || app.exporting || app.dialogOpen)
-				if copyResponse.Clicked() {
-					mygo.Clipboard.WriteText(app.aiResponse)
-					app.status = app.localized("AI 回答已复制到系统剪贴板。 ")
-				}
-				ui.Text(c, app.aiResponse).Selectable()
-			}
-			if app.aiResponse != "" && (app.aiResponseMode == "生成 SQL" || app.aiResponseMode == "解释 SQL" || app.aiResponseMode == "解释错误") {
-				insert := ui.Button(c, app.localized("将草稿放入 SQL 编辑器"))
-				insert.Disabled(app.aiRunning || app.busy || app.exporting || app.dialogOpen)
-				if insert.Clicked() {
-					app.activeQuery.query.Buffer.Set(app.aiResponse)
-					app.aiDraftStatement, app.aiDraftPending, app.aiDraftApproved = app.aiResponse, true, false
-					app.showAI = false
-					app.status = app.localized("AI 草稿已放入 SQL 编辑器；执行前必须确认连接、语句和风险。")
-				}
-			}
-			if app.aiResponse != "" && app.aiResponseMode == "生成 Mongo Filter" {
-				insert := ui.Button(c, app.localized("放入 Mongo Filter 编辑器"))
-				insert.Disabled(app.aiRunning || app.busy || app.dialogOpen || app.documentStore == nil || app.mongoSelectedColl == "")
-				if insert.Clicked() {
-					app.ensureMongoQueryEditors()
-					app.mongoFilterEditor.Buffer.Set(app.aiResponse)
-					app.showAI = false
-					app.status = app.localized("AI Filter 草稿已填入；检查 JSON 后再查询。")
-				}
-			}
-			if app.aiResponse != "" && app.aiResponseMode == "生成 Mongo Pipeline" {
-				insert := ui.Button(c, app.localized("放入 Mongo Pipeline 编辑器"))
-				insert.Disabled(app.aiRunning || app.busy || app.dialogOpen || app.documentStore == nil || app.mongoSelectedColl == "")
-				if insert.Clicked() {
-					app.ensureMongoQueryEditors()
-					app.mongoPipelineEditor.Buffer.Set(app.aiResponse)
-					app.mongoUsePipeline = true
-					app.showAI = false
-					app.status = app.localized("AI Pipeline 草稿已填入；检查 JSON 后再查询。写集合阶段会被 adapter 拒绝。")
-				}
-			}
-		})
-	})
+	ui.Column(c).Fill().Direction(ui.LeftToRight).Padding(16).Children(func() { app.aiDockedWorkspace(c) })
 }
 
 func (app *workbench) saveAISettings() {
 	if app.busy || app.aiRunning || app.aiPrepared || app.preferences == nil {
 		return
 	}
+	name := strings.TrimSpace(app.aiProviderName)
+	if name == "" {
+		app.reportError("保存 AI 设置失败", errors.New(app.localized("请填写 provider 名称")))
+		return
+	}
 	secret := []byte(app.aiAPIKey)
 	app.aiAPIKey = ""
 	settings := aiSettingsForSave(app.aiEnabled, app.aiEndpoint, app.aiModel, app.aiSettings.APIKeyRef, app.aiRemoveKey)
+	oldCacheKey := app.aiModelCacheKey()
+	id := app.aiProviderID
+	if app.aiProviderNew || id == "" {
+		id = uuid.NewString()
+	}
+	providers := append([]preferences.AIProvider(nil), app.aiProviders...)
+	activeID := app.aiDefaultProviderID
+	if app.aiProviderNew || activeID == "" {
+		activeID = id
+	}
 	previous := credentials.Reference(app.aiSettings.APIKeyRef)
 	if app.aiRemoveKey {
 		clear(secret)
@@ -405,11 +260,22 @@ func (app *workbench) saveAISettings() {
 			}
 			settings.APIKeyRef = string(newRef)
 		}
-		err := store.SaveAISettings(settings, revision)
+		provider := preferences.AIProvider{ID: id, Name: name, AISettings: settings}
+		replaced := false
+		for i := range providers {
+			if providers[i].ID == id {
+				providers[i], replaced = provider, true
+				break
+			}
+		}
+		if !replaced {
+			providers = append(providers, provider)
+		}
+		err := store.SaveAIProviders(providers, activeID, revision)
 		if err != nil && newRef != "" {
 			_ = vault.Delete(newRef)
 		}
-		if err == nil && previous != "" && previous != credentials.Reference(settings.APIKeyRef) {
+		if err == nil && previous != "" && !aiProviderUsesKey(providers, string(previous)) {
 			_ = vault.Delete(previous)
 		}
 		app.window.Update(func() {
@@ -418,6 +284,13 @@ func (app *workbench) saveAISettings() {
 			if err != nil {
 				app.reportError("保存 AI 设置失败", err)
 				return
+			}
+			app.aiProviders = providers
+			app.aiDefaultProviderID = activeID
+			app.aiProviderID, app.aiProviderName, app.aiProviderNew = id, name, false
+			app.aiProviderNameEditing = false
+			if app.aiModelCache != nil {
+				app.aiModelCache[app.aiModelCacheKey()] = app.aiModelCache[oldCacheKey]
 			}
 			app.aiSettings = settings
 			app.aiEnabled = settings.Enabled
@@ -541,7 +414,7 @@ func (app *workbench) askAI() {
 	app.aiPreview = string(previewBytes)
 	app.aiPrepared = true
 	app.aiResponse = ""
-	app.status = app.localized("请求尚未发送。检查下方实际消息内容与目标 provider 后，再确认发送。")
+
 }
 
 func promptTemplatesForMode(mode string) []aiPromptTemplate {
@@ -577,7 +450,7 @@ func (app *workbench) applyAIPromptTemplate() {
 }
 
 func (app *workbench) aiSettingsDirty() bool {
-	return app.aiEnabled != app.aiSettings.Enabled || strings.TrimSpace(app.aiEndpoint) != app.aiSettings.Endpoint || strings.TrimSpace(app.aiModel) != app.aiSettings.Model || app.aiAPIKey != "" || app.aiRemoveKey
+	return app.aiProviderNew || app.aiProviderNameDirty() || app.aiEnabled != app.aiSettings.Enabled || strings.TrimSpace(app.aiEndpoint) != app.aiSettings.Endpoint || strings.TrimSpace(app.aiModel) != app.aiSettings.Model || app.aiAPIKey != "" || app.aiRemoveKey
 }
 
 func (app *workbench) sendPreparedAI() {
@@ -589,11 +462,16 @@ func (app *workbench) sendPreparedAI() {
 	ctx, cancel := app.withTaskTimeout(2 * time.Minute)
 	app.aiCancel, app.aiRunning, app.aiPrepared = cancel, true, false
 	app.aiResponse = ""
+	app.aiRequestError = ""
 	app.status = app.localized("正在请求 AI…")
 	go func() {
 		keyBytes, err := app.vault.Load(credentials.Reference(settings.APIKeyRef))
 		if err != nil {
-			app.window.Update(func() { app.aiRunning, app.aiCancel = false, nil; app.reportError("读取 AI API key 失败", err) })
+			app.window.Update(func() {
+				app.aiRunning, app.aiCancel = false, nil
+				app.aiRequestError = err.Error()
+				app.reportError("读取 AI API key 失败", err)
+			})
 			cancel()
 			return
 		}
@@ -611,6 +489,7 @@ func (app *workbench) sendPreparedAI() {
 				return
 			}
 			if err != nil {
+				app.aiRequestError = err.Error()
 				app.reportError("AI 请求失败", err)
 				return
 			}
@@ -635,13 +514,14 @@ func (app *workbench) prepareAIRegeneration() {
 		return
 	}
 	app.aiPrepared = true
-	app.status = app.localized("已准备按上次已审核的消息重新生成；再次检查 payload 并确认后才会发送。")
+	app.aiPreparedSettings = app.aiSettings
 }
 
 func (app *workbench) clearAIContent() {
 	if app.aiRunning {
 		return
 	}
+	app.aiRequestError = ""
 	app.aiPrompt = ""
 	app.aiResponse = ""
 	app.aiPreview = ""

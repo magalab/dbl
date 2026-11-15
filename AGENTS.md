@@ -14,7 +14,7 @@
 - Use the shared icon helpers for icon-only actions and provide localized labels/tooltips for accessibility.
 - Prefer icons for buttons wherever the action is clear from its context; keep localized accessible labels/tooltips, and use color or icon changes to show toggled state.
 - Store API keys, database secrets, and TLS private material only through the encrypted local credential vault. Preferences may keep opaque credential references, never secret values. Keep the vault directory and key file restricted to the current OS user.
-- AI requests must remain opt-in, show the actual payload before sending, and never execute generated SQL or data changes automatically.
+- AI requests must remain opt-in: the Send action sends directly to the selected provider without a mandatory payload preview. Attach context only when explicitly selected, and never execute generated SQL or data changes automatically.
 - Preserve read-only protections and explicit preview/confirmation flows for database mutations.
 - Keep SQLite builds pure Go (`CGO_ENABLED=0`); do not add a CGO-only SQLite dependency.
 

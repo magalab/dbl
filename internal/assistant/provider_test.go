@@ -54,7 +54,7 @@ func TestOpenAICompatibleStreamsOnlyPreparedMessages(t *testing.T) {
 		}
 		return testHTTPResponse(request, http.StatusOK, http.Header{"Content-Type": []string{"text/event-stream"}},
 			"data: {\"choices\":[{\"delta\":{\"content\":\"hello \"}}]}\n\n"+
-			"data: {\"choices\":[{\"delta\":{\"content\":\"world\"}}]}\n\ndata: [DONE]\n\n"), nil
+				"data: {\"choices\":[{\"delta\":{\"content\":\"world\"}}]}\n\ndata: [DONE]\n\n"), nil
 	})
 
 	var chunks []string
@@ -147,5 +147,20 @@ func TestOpenAICompatibleCancellationStopsStream(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("provider did not stop after cancellation")
+	}
+}
+
+func TestChatAcceptsBaseURLAndFullEndpoint(t *testing.T) {
+	for _, endpoint := range []string{"https://provider.example/v1", "https://provider.example/v1/", "https://provider.example/v1/chat/completions", "https://provider.example"} {
+		transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			if request.URL.Path != "/v1/chat/completions" {
+				t.Errorf("chat path = %s", request.URL.Path)
+			}
+			return testHTTPResponse(request, http.StatusOK, nil, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n"), nil
+		})
+		p := OpenAICompatible{Endpoint: endpoint, Model: "model", APIKey: []byte("key"), Client: &http.Client{Transport: transport}}
+		if err := p.Stream(context.Background(), []Message{{Role: "user", Content: "hello"}}, nil); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

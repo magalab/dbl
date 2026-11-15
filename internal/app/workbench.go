@@ -229,6 +229,16 @@ type workbench struct {
 	profileTLSCertPath           string
 	profileTLSKeyPath            string
 	profileSecretVisible         bool
+	aiModelCache                 map[string][]string
+	aiModelsError                string
+	aiModelsLoading              bool
+	aiProviders                  []preferences.AIProvider
+	aiProviderID                 string
+	aiDefaultProviderID          string
+	aiProviderName               string
+	aiProviderNew                bool
+	aiProviderNameEditing        bool
+	aiOptionsExpanded            bool
 	aiSettings                   preferences.AISettings
 	aiEnabled                    bool
 	aiEndpoint                   string
@@ -245,6 +255,7 @@ type workbench struct {
 	aiIncludeMongoQuery          bool
 	aiIncludeRedisMeta           bool
 	aiIncludeEtcdMeta            bool
+	aiRequestError               string
 	aiResponse                   string
 	aiPreview                    string
 	aiPreparedMessages           []assistant.Message
@@ -553,6 +564,14 @@ func newWorkbench() *workbench {
 	}
 	app.vault = vault
 	settings := prefs.Settings()
+	app.aiProviders = settings.AIProviders
+	app.aiProviderID = settings.ActiveAIProviderID
+	app.aiDefaultProviderID = settings.ActiveAIProviderID
+	for _, provider := range app.aiProviders {
+		if provider.ID == app.aiProviderID {
+			app.aiProviderName = provider.Name
+		}
+	}
 	app.aiSettings = settings.AI
 	app.aiEnabled = settings.AI.Enabled
 	app.aiEndpoint, app.aiModel = settings.AI.Endpoint, settings.AI.Model

@@ -35,7 +35,7 @@ func (app *workbench) view(c *ui.Context) {
 				if app.showAI {
 					ui.Column(c).Fill().Direction(ui.RightToLeft).Children(func() {
 						ui.Split(c, &app.aiPanelWidth, func() {
-							ui.Column(c).Fill().MinWidth(320).Padding(8).Background(c.Theme().Surface).Border(1, c.Theme().Border).Radius(c.Theme().Radius).Children(func() {
+							ui.Column(c).Fill().Direction(ui.LeftToRight).MinWidth(320).Padding(12).Background(c.Theme().Surface).Border(1, c.Theme().Border).Radius(c.Theme().Radius).Children(func() {
 								app.aiWorkspace(c)
 							})
 						}, func() {

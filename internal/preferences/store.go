@@ -37,6 +37,8 @@ type Settings struct {
 	ConnectionProfiles  []ConnectionProfile `json:"connection_profiles,omitempty"`
 	QueryHistoryEnabled bool                `json:"query_history_enabled,omitempty"`
 	QueryHistory        []QueryHistoryEntry `json:"query_history,omitempty"`
+	AIProviders         []AIProvider        `json:"ai_providers,omitempty"`
+	ActiveAIProviderID  string              `json:"active_ai_provider_id,omitempty"`
 	AI                  AISettings          `json:"ai,omitempty"`
 }
 
@@ -199,6 +201,7 @@ func OpenAt(dir string) (*Store, error) {
 	} else {
 		settings.QueryHistory = normalizeQueryHistory(settings.QueryHistory)
 	}
+	settings = migrateAIProviders(settings)
 	store.settings = settings
 	return store, nil
 }
@@ -297,7 +300,7 @@ func (store *Store) SetLanguage(language string, revision uint64) error {
 	return nil
 }
 
-func (store *Store) SaveAISettings(settings AISettings, revision uint64) error {
+func validateAISettings(settings AISettings) error {
 	settings.Endpoint = strings.TrimSpace(settings.Endpoint)
 	settings.Model = strings.TrimSpace(settings.Model)
 	settings.APIKeyRef = strings.TrimSpace(settings.APIKeyRef)
@@ -319,6 +322,14 @@ func (store *Store) SaveAISettings(settings AISettings, revision uint64) error {
 		if parsedEndpoint == nil || settings.Model == "" || !credentials.Reference(settings.APIKeyRef).Valid() {
 			return errors.New("enabled AI requires a model and saved API key")
 		}
+	}
+	return nil
+}
+
+func (store *Store) SaveAISettings(settings AISettings, revision uint64) error {
+	settings = normalizeAISettings(settings)
+	if err := validateAISettings(settings); err != nil {
+		return err
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -382,6 +393,7 @@ func (store *Store) Settings() Settings {
 	settings.SQLiteProfiles = append([]SQLiteProfile(nil), settings.SQLiteProfiles...)
 	settings.ConnectionProfiles = append([]ConnectionProfile(nil), settings.ConnectionProfiles...)
 	settings.QueryHistory = append([]QueryHistoryEntry(nil), settings.QueryHistory...)
+	settings.AIProviders = append([]AIProvider(nil), settings.AIProviders...)
 	return settings
 }
 

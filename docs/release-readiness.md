@@ -9,7 +9,7 @@
 | macOS | 12+ | arm64 | 2026-10-29 基于提交 `07d5c27` 使用 MyGo 0.6.2 重建 universal `DBL.app`（ad-hoc 签名，跳过 DMG），其中包含 arm64；bundle ID `com.magalab.dbl`、版本 `0.1.0`、最低系统版本 12.0，`lipo` 架构和 `codesign --verify --deep --strict` 均通过。源 `resources/` 的 108 个文件全部与包内哈希一致，包内另有 `AppIcon.icns` 和 `Assets.car`。未启动该 bundle，连接弹窗、设置、快捷键、COUNT 取消与连接关闭行为仍缺最新包的可见交互验收；此前旧测试窗口的 SQLite、PostgreSQL、MySQL 基础连接/查询 smoke 不能替代本次验收。自定义 CA 表单、AI、生产环境提示尚无可见验收；数据库集成已覆盖 PostgreSQL/MySQL 私有 CA + verify-full、MongoDB/Redis/etcd 单机及认证/TLS；正式签名、公证、干净安装/卸载未验证 |
 | macOS | 12+ | amd64/universal | 2026-10-29 基于提交 `07d5c27` 使用 MyGo 0.6.2 重建 universal `DBL.app`（ad-hoc 签名，跳过 DMG）；`lipo -archs` 确认 arm64 + x86_64，bundle ID `com.magalab.dbl`、版本 `0.1.0`、最低系统版本 12.0、codesign 校验通过，源 `resources/` 的 108 个文件全部与包内哈希一致。当前提交未生成 DMG；此前 `5a95ac0` 的 DMG 构建在 `hdiutil create` 阶段因宿主“设备未配置”失败，不能作为本提交 DMG 验证。应用未启动，Intel 硬件启动和最新 UI 交互仍待验证 |
 | Linux | GTK 3 发行版 | amd64、arm64 | 2026-10-29 基于提交 `07d5c27` 使用 MyGo 0.6.2 生成 amd64/arm64 可执行文件、`.deb` 与 tar.gz；ELF 架构正确，源 `resources/` 的 108 个文件在两种架构的 staging、tar.gz 和 `.deb` 中全部逐文件哈希匹配。此前 Debian 12 arm64 与 OrbStack/QEMU amd64 容器安装/启动/卸载 smoke、GNOME Keyring/D-Bus 三进程 smoke 针对旧提交，不能替代本提交包的运行验收。原生桌面/登录会话、其他发行版与目标硬件仍待验证 |
-| Windows | Windows 10/11 | amd64、arm64 | 2026-10-29 基于提交 `07d5c27` 使用 MyGo 0.6.2 生成 amd64/arm64 PE32+ GUI 可执行文件；架构正确，源 `resources/` 的 108 个文件在两种架构 staging 目录均逐文件哈希匹配。当前构建机没有 NSIS（`makensis`），本轮未生成 Setup 安装器；目标系统运行、安装卸载、ACL、凭据库和正式签名仍待验证 |
+| Windows | Windows 10/11 | amd64、arm64 | 2026-10-29 基于当前工作树，使用 MyGo 0.6.2 与 NSIS 3.13 从 macOS arm64 生成 amd64/arm64 的 PE32+ 主程序及 NSIS Setup 安装器；`file` 确认主程序架构分别为 x86-64/ARM64，安装器识别为 NSIS；两个架构的应用目录均包含 LICENSE 和第三方通知。目标系统启动、安装卸载、Windows ACL/凭据库及 Authenticode 签名仍待验证；本次构建未签名 |
 
 SQLite 使用 `modernc.org/sqlite v1.61.0`，保持 `CGO_ENABLED=0`。MyGo 固定 `v0.6.2`。MongoDB、etcd 和 AI 的版本/协议见 `docs/decisions/`。
 
@@ -22,7 +22,7 @@ go install github.com/egoist/mygo/cmd/mygo@v0.6.2
 CGO_ENABLED=0 mygo build -platform darwin/arm64,windows/amd64,windows/arm64,linux/amd64,linux/arm64
 ```
 
-构建会将 MyGo 原生 UI 打包为各平台安装产物。Windows/Linux 使用 `mygo.json` 指定的 `resources/icon.png`；macOS 额外使用 `packaging/macos/Assets.car`，其资产目录源文件在 `packaging/macos/Assets.xcassets/`，圆角图源为 `resources/icon-macos.png`。MyGo 将 `Assets.car` 作为 macOS 图标资源优先于默认 `.icns`，其余平台继续使用通用图标。macOS 开发者签名/公证、Windows 签名、自动更新密钥和发布仓库尚未配置。签名私钥、更新签名密钥只能来自 CI secret 或受控密钥库，不得写入 `mygo.json`、源码或发布日志。Go runtime 依赖已生成版本化许可清单，完整上游许可/通知及 MPL-2.0 MySQL 源码已放入 MyGo 自动打包的 `resources/`；最新 darwin/arm64 app bundle 已核对包含 105 个许可/通知/源码文件，与源目录逐文件 SHA-256 一致。DBL 自有代码许可证待项目所有者确认；非 Go 打包资产和法律审阅仍待完成。
+构建会将 MyGo 原生 UI 打包为各平台安装产物。Windows/Linux 使用 `mygo.json` 指定的 `resources/icon.png`；macOS 额外使用 `packaging/macos/Assets.car`，其资产目录源文件在 `packaging/macos/Assets.xcassets/`，圆角图源为 `resources/icon-macos.png`。MyGo 将 `Assets.car` 作为 macOS 图标资源优先于默认 `.icns`，其余平台继续使用通用图标。macOS 开发者签名/公证、Windows 签名、自动更新密钥和发布仓库尚未配置。签名私钥、更新签名密钥只能来自 CI secret 或受控密钥库，不得写入 `mygo.json`、源码或发布日志。Go runtime 依赖已生成版本化许可清单，完整上游许可/通知及 MPL-2.0 MySQL 源码已放入 MyGo 自动打包的 `resources/`；最新 darwin/arm64 app bundle 已核对包含 105 个许可/通知/源码文件，与源目录逐文件 SHA-256 一致。DBL 自有代码采用 MIT License，许可文本位于根目录 `LICENSE`，并复制到 `resources/LICENSE` 随应用分发；非 Go 打包资产许可审查和整体法律审阅仍待完成。
 
 macOS 从“DBL”应用菜单、Linux/Windows 从“帮助”菜单打开“关于 DBL”面板；面板显示打包版本、DBL 名称和 MyGo 版本，未打包的开发运行显示“开发版”。
 

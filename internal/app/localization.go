@@ -6,6 +6,26 @@ import (
 )
 
 var englishUI = map[string]string{
+	"双击重命名 provider": "Double-click to rename provider",
+	"设为默认":           "Set as default",
+	"默认":             "Default", "尚无 provider，请添加一个。 ": "No providers yet. Add one to get started.", "取消新增 provider": "Cancel adding provider",
+	"provider 名称，例如 DeepSeek": "Provider name, e.g. DeepSeek",
+	"展开任务与上下文":                "Expand task and context", "收起任务与上下文": "Collapse task and context", "应用": "Apply",
+	"输入或选择模型": "Type or select a model",
+	"获取模型":    "Fetch models", "刷新模型列表": "Refresh model list", "刷新模型列表后选择": "Refresh models to choose", "模型": "Model", "正在获取模型…": "Fetching models…", "搜索模型": "Search models", "获取失败，可手动填写模型名称": "Could not fetch models. Enter a model name manually.",
+	"回答可作为草稿使用，不会自动执行。": "Responses are drafts and are never executed automatically.",
+	"任务与上下文":               "Task & context",
+	"发送消息":                 "Send message",
+	"请填写 provider 名称":      "Enter a provider name",
+	"添加 provider 后开始对话":    "Add a provider to start a conversation",
+	"请先保存或取消 provider 修改":  "Save or cancel provider changes first",
+	"添加 provider":          "Add provider",
+	"删除 provider":          "Delete provider",
+	"取消修改":                 "Cancel changes",
+	"provider 名称":          "Provider name",
+	"例如：MiniMax、工作账号、本地模型": "e.g. MiniMax, Work account, Local model",
+	"清理 AI 密钥失败":           "Failed to remove AI credential",
+
 	"切换左侧边栏 · ⌘/Ctrl+B":         "Toggle left sidebar · ⌘/Ctrl+B",
 	"打开 AI 助手 · ⌘/Ctrl+Shift+B": "Open AI Assistant · ⌘/Ctrl+Shift+B",
 	"关闭 AI 助手 · ⌘/Ctrl+Shift+B": "Close AI Assistant · ⌘/Ctrl+Shift+B",

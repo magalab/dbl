@@ -15,7 +15,7 @@ CGO_ENABLED=0 go build -o build/dbl .
 
 macOS 的应用菜单、Linux/Windows 的“帮助”菜单均提供“关于 DBL”，显示应用版本与 MyGo 版本。窗口中包含可拖动分栏、窄窗口切换为全页的 AI 助手面板、MyGo SQL 代码编辑器（含格式化按钮）、虚拟列表和结果表，以及最多 16 个互相独立的查询工作区标签。标签分别保留 SQL 文本、已读结果、排序和会话历史；格式化器保留字符串、标识符和注释内容，不解析或验证 SQL 方言。SQLite 连接由标签共享。切换有未读结果的标签会停止该标签的后续读取并保留已读部分。SQLite 原生文件选择打开/新建、关闭、可选只读连接、对象与列浏览、SQL 查询、取消、分页读取、单元格/行复制、CSV/JSON 导出和会话查询历史也已接入；会话内历史可按工作区清空并随退出清除，另可在历史面板选择本机持久保存。错误先显示摘要，用户可展开技术详情；已识别的数据库服务错误只显示错误码或通用类别，不回显服务端原文和可能包含的键值。数据库对象按 200 项 keyset 页面加载；查询结果默认每页 100 行，可选 25/50/100/200/500，页码字段回车可跳转到已加载页面，支持首页/上一页/下一页/当前已读末页。对符合安全读取条件的单条 SELECT，“统计总数”会在后台向数据库提交可取消的 COUNT 查询，不把全部结果行传到界面；复杂查询或可能有副作用的语句不提供此操作。统计仍可能受数据库执行计划和并发写入影响。结果内存有界，过大结果中较早的行可能释放，超大行不会显示。结果表支持按列排序，但只重排当前已读取的结果，不改变游标读取顺序，也不表示完整查询结果已排序。完整导出会在只读连接上重跑生成当前结果窗口的 SQL，而不是编辑器后来修改的文本；结果来源文件与当前连接不一致时会禁用导出。CSV/JSON 流式写入私有临时文件，完成并同步后才原子发布；取消或失败会清理临时文件，发布时拒绝覆盖已有目标。重新执行可能因非确定性 SQL 或并发写入而得到不同数据。
 
-本机偏好保存最近 SQLite 文件路径，连接 profile 支持分组、收藏、只读和复制。新建/编辑连接使用原生模态面板，侧栏只用于连接与对象导航；初次启动时左侧连接导航展开、AI 助手面板关闭；宽窗口可将 AI 助手固定在右侧并继续使用中央数据库工作区，窄窗口切换为全页 AI 工作区。未连接时显示连接欢迎页，连接后先显示概览；用户新建查询后才显示查询标签和编辑器。`⌘/Ctrl+N` 新建连接，`⌘/Ctrl+T` 新建查询工作区，`⌘/Ctrl+,` 打开设置窗口。设置窗口管理外观和查询历史，并提供 AI provider 设置入口。SQLite profile 可测试/打开；PostgreSQL/MySQL 支持 TLS、SQL 工作区和数据库/Schema 选择（切换后重连）；PostgreSQL 当前 schema 决定未限定对象名的 search_path，选择共享 schema 前应确认其创建者可信；SQLite 固定使用 main schema；Redis 支持 SCAN、类型读取、TTL 和基础写入；MongoDB 支持数据库/集合、find、基础 pipeline、分页文档与 diff 后写入；etcd 支持多 endpoint、TLS/认证、前缀/精确读取、revision/lease TTL 元数据、watch 和删除预览。Redis 不调用 `KEYS`。Mongo 聚合禁止 `$out`/`$merge`；etcd 删除默认精确键，前缀删除需显式开启并先查看数量。etcd mTLS 客户端证书和私钥、AI API key、数据库密码保存在本机加密凭据库，自定义 CA 使用 PEM 路径；MongoDB 支持 PEM 自定义 CA 并追加到系统根证书，暂不支持 mTLS 客户端证书。AI 助手可从顶部按钮或 `⌘/Ctrl+Shift+B` 在右侧打开；窄窗口中切换为全页工作区。面板支持配置 OpenAI-compatible SSE endpoint、model 与本机加密 API key，提供按任务分类的提示模板、多行提示编辑器和按上次已审核请求重新生成，并生成/解释 SQL、生成 Mongo filter/pipeline 草稿及提供 Redis/etcd 文字建议。上下文逐项 opt-in，发送前展示实际 payload；文档、键值和配置值不发送。AI 草稿不自动执行，插入 SQL 后执行前展示连接、语句和粗略风险分类并要求确认。MongoDB/Redis/etcd 已通过本机服务集成；Redis ACL + verify-full TLS、MongoDB SCRAM + TLS 加密及 profile 私有 CA verify-full 路径也已通过。目标 etcd 版本与 UI、AI 云 provider 与各数据源桌面 bundle 交互尚未完整验收。配置位于用户配置目录下的 `dbl/settings.json` 和 `dbl/credentials/`；Unix 权限是 `0700`/`0600`，Windows ACL 行为仍需验证。
+本机偏好保存最近 SQLite 文件路径，连接 profile 支持分组、收藏、只读和复制。新建/编辑连接使用原生模态面板，侧栏只用于连接与对象导航；初次启动时左侧连接导航展开、AI 助手面板关闭；宽窗口可将 AI 助手固定在右侧并继续使用中央数据库工作区，窄窗口切换为全页 AI 工作区。未连接时显示连接欢迎页，连接后先显示概览；用户新建查询后才显示查询标签和编辑器。`⌘/Ctrl+N` 新建连接，`⌘/Ctrl+T` 新建查询工作区，`⌘/Ctrl+,` 打开设置窗口。设置窗口管理外观和查询历史，并提供 AI provider 设置入口。SQLite profile 可测试/打开；PostgreSQL/MySQL 支持 TLS、SQL 工作区和数据库/Schema 选择（切换后重连）；PostgreSQL 当前 schema 决定未限定对象名的 search_path，选择共享 schema 前应确认其创建者可信；SQLite 固定使用 main schema；Redis 支持 SCAN、类型读取、TTL 和基础写入；MongoDB 支持数据库/集合、find、基础 pipeline、分页文档与 diff 后写入；etcd 支持多 endpoint、TLS/认证、前缀/精确读取、revision/lease TTL 元数据、watch 和删除预览。Redis 不调用 `KEYS`。Mongo 聚合禁止 `$out`/`$merge`；etcd 删除默认精确键，前缀删除需显式开启并先查看数量。etcd mTLS 客户端证书和私钥、AI API key、数据库密码保存在本机加密凭据库，自定义 CA 使用 PEM 路径；MongoDB 支持 PEM 自定义 CA 并追加到系统根证书，暂不支持 mTLS 客户端证书。AI 助手可从顶部按钮或 `⌘/Ctrl+Shift+B` 在右侧打开；窄窗口中切换为全页工作区。面板支持添加、编辑、删除多个 OpenAI-compatible provider，每个配置独立的名称、endpoint、model 与本机加密 API key，并可在助手顶部切换，提供按任务分类的提示模板、多行提示编辑器和按上次请求重新生成（使用当前所选 provider），并生成/解释 SQL、生成 Mongo filter/pipeline 草稿及提供 Redis/etcd 文字建议。点击发送直接请求当前 provider，无需二次确认；任务、模板与上下文选项可展开，附带上下文仍逐项 opt-in；文档、键值和配置值不发送。AI 草稿不自动执行，插入 SQL 后执行前展示连接、语句和粗略风险分类并要求确认。MongoDB/Redis/etcd 已通过本机服务集成；Redis ACL + verify-full TLS、MongoDB SCRAM + TLS 加密及 profile 私有 CA verify-full 路径也已通过。目标 etcd 版本与 UI、AI 云 provider 与各数据源桌面 bundle 交互尚未完整验收。配置位于用户配置目录下的 `dbl/settings.json` 和 `dbl/credentials/`；Unix 权限是 `0700`/`0600`，Windows ACL 行为仍需验证。
 
 
 AI 的提示、请求预览和回答只在运行期间保留，可用“清空 AI 内容”立即清除；未保存 API key 有单独清除入口。
@@ -127,7 +127,7 @@ DBL_TEST_ETCD_USERNAME=dbltest DBL_TEST_ETCD_PASSWORD=secret \
 
 ## 第三方许可
 
-DBL 自有代码许可证待项目所有者确认。`THIRD_PARTY_NOTICES.md` 列出六个发布目标的 Go 运行依赖及版本；完整上游许可/通知文件随包放在 `resources/THIRD_PARTY_LICENSES/`。MySQL 驱动 MPL-2.0 源码也一并保留，各第三方组件仍按其各自许可证分发；该清单不代表完成法律审阅。
+DBL 自有代码采用 MIT License，许可文本见根目录 `LICENSE`；应用资源中的 `resources/LICENSE` 会随安装包分发。`THIRD_PARTY_NOTICES.md` 列出六个发布目标的 Go 运行依赖及版本；完整上游许可/通知文件随包放在 `resources/THIRD_PARTY_LICENSES/`。MySQL 驱动 MPL-2.0 源码也一并保留，各第三方组件仍按其各自许可证分发；该清单不代表完成法律审阅。
 
 ## 当前阶段限制
 
@@ -138,3 +138,5 @@ DBL 自有代码许可证待项目所有者确认。`THIRD_PARTY_NOTICES.md` 列
 - 查询历史默认只保留本次运行的最近 100 条；在历史面板开启本机保存后，最近 100 条会写入私有设置文件，关闭时清除磁盘副本。
 - 不返回结果集的 SQL 会显示执行完成，但尚未展示 DML 影响行数。
 - `tmp/` 是本地工作目录，不属于应用交付内容。
+
+AI provider 设置支持“获取模型”和搜索选择，也可手动输入名称。模型列表按 provider 与地址缓存在本次运行中；助手顶部可切换已获取的模型，选择会保存到当前 provider。获取失败不会覆盖已选模型。
