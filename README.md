@@ -25,7 +25,7 @@ DBL 提供 SQL 查询、多标签工作区、数据浏览与编辑，以及可�
 
 ### macOS
 
-下载 arm64 的 DMG，将 `DBL.app` 拖入“应用程序”；也可下载 ZIP。应用使用 ad-hoc 签名，未经 Apple 公证，首次打开可能需要在系统设置中允许。
+下载 arm64 的 DMG，将 `DBL.app` 拖入“应用程序”。应用使用 ad-hoc 签名，未经 Apple 公证，首次打开可能需要在系统设置中允许。
 
 首个正式版本发布且 Homebrew tap 更新后，可使用：
 
@@ -35,7 +35,7 @@ brew install --cask magalab/tap/dbl
 
 ### Windows
 
-下载 amd64 的 Setup 安装器，或解压 ZIP 后运行应用。
+下载 amd64 的 Setup 安装器并运行。
 
 安装包与 Homebrew Cask 的可用状态以 Releases 和 [Homebrew tap](https://github.com/magalab/homebrew-tap) 为准。最新安装包的验收进度见 [发布准备清单](docs/release-readiness.md)。
 

@@ -16,8 +16,8 @@
 
 | 目标 | 交付内容 |
 |---|---|
-| macOS arm64 | ad-hoc 签名的 DMG 和 ZIP，检查签名及二进制架构 |
-| Windows amd64 | NSIS Setup 安装器和 ZIP |
+| macOS arm64 | ad-hoc 签名的 DMG，检查签名及二进制架构 |
+| Windows amd64 | NSIS Setup 安装器 |
 
 每个目标独立构建并上传 Actions artifact，保留 14 天。手动构建只上传 artifact；标签构建在全部成功后创建或更新对应的草稿 Release，并附上 SHA256SUMS。已有正式发布的 Release 不会被覆盖。Windows 安装器依赖由 MyGo CLI 自动准备；无须配置 Apple 签名证书或公证凭据。
 
