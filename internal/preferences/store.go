@@ -2,6 +2,7 @@
 package preferences
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/magalab/dbl/internal/credentials"
 	"github.com/magalab/dbl/internal/privatefs"
+	"github.com/pelletier/go-toml"
 )
 
 const maxRecentSQLitePaths = 10
@@ -118,10 +120,16 @@ func OpenAt(dir string) (*Store, error) {
 	if err := privatefs.Restrict(dir, true); err != nil {
 		return nil, fmt.Errorf("restrict preferences directory permissions: %w", err)
 	}
-	path := filepath.Join(dir, "settings.json")
+	path := filepath.Join(dir, "settings.toml")
+	legacyJSON := false
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return store, nil
+		path = filepath.Join(dir, "settings.json")
+		info, err = os.Lstat(path)
+		legacyJSON = err == nil
+		if errors.Is(err, os.ErrNotExist) {
+			return store, nil
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("inspect preferences file: %w", err)
@@ -137,7 +145,12 @@ func OpenAt(dir string) (*Store, error) {
 		return nil, fmt.Errorf("read preferences file: %w", err)
 	}
 	var settings Settings
-	if err := json.Unmarshal(data, &settings); err != nil {
+	if legacyJSON {
+		err = json.Unmarshal(data, &settings)
+	} else {
+		err = toml.NewDecoder(strings.NewReader(string(data))).SetTagName("json").Decode(&settings)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("parse preferences file: %w", err)
 	}
 	if settings.Version != 1 {
@@ -203,11 +216,19 @@ func OpenAt(dir string) (*Store, error) {
 	}
 	settings = migrateAIProviders(settings)
 	store.settings = settings
+	if legacyJSON {
+		if err := writeSettings(dir, settings); err != nil {
+			return nil, fmt.Errorf("migrate preferences to TOML: %w", err)
+		}
+		// The TOML file is now authoritative. A leftover legacy file is ignored
+		// on future launches if cleanup is blocked by filesystem permissions.
+		_ = os.Remove(path)
+	}
 	return store, nil
 }
 
 // CredentialDirectory returns the private directory used for encrypted local
-// credentials. It is separate from settings.json so secrets never enter JSON.
+// credentials. It is separate from settings.toml so secrets never enter TOML.
 func (store *Store) CredentialDirectory() string {
 	if store == nil {
 		return ""
@@ -675,7 +696,8 @@ func writeSettingsWithCheckpoint(dir string, settings Settings, checkpoint func(
 	if err := privatefs.Restrict(dir, true); err != nil {
 		return fmt.Errorf("restrict preferences directory permissions: %w", err)
 	}
-	data, err := json.MarshalIndent(settings, "", "  ")
+	var encoded bytes.Buffer
+	err := toml.NewEncoder(&encoded).SetTagName("json").Encode(settings)
 	if err != nil {
 		return fmt.Errorf("encode preferences: %w", err)
 	}
@@ -690,7 +712,7 @@ func writeSettingsWithCheckpoint(dir string, settings Settings, checkpoint func(
 		_ = temp.Close()
 		return fmt.Errorf("restrict temporary preferences permissions: %w", err)
 	}
-	if _, err := temp.Write(data); err != nil {
+	if _, err := temp.Write(encoded.Bytes()); err != nil {
 		_ = temp.Close()
 		return fmt.Errorf("write temporary preferences: %w", err)
 	}
@@ -704,7 +726,7 @@ func writeSettingsWithCheckpoint(dir string, settings Settings, checkpoint func(
 		return fmt.Errorf("close temporary preferences: %w", err)
 	}
 	mark("closed")
-	if err := replaceSettingsFile(tempPath, filepath.Join(dir, "settings.json")); err != nil {
+	if err := replaceSettingsFile(tempPath, filepath.Join(dir, "settings.toml")); err != nil {
 		return fmt.Errorf("replace preferences file: %w", err)
 	}
 	mark("replaced")

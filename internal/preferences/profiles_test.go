@@ -1,12 +1,13 @@
 package preferences
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/pelletier/go-toml"
 )
 
 func TestRemoteConnectionProfileCRUDCopyAndPersistence(t *testing.T) {
@@ -34,7 +35,7 @@ func TestRemoteConnectionProfileCRUDCopyAndPersistence(t *testing.T) {
 		t.Fatalf("created profile defaults = %#v", profile)
 	}
 
-	contents, err := os.ReadFile(filepath.Join(dir, "settings.json"))
+	contents, err := os.ReadFile(filepath.Join(dir, "settings.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +43,7 @@ func TestRemoteConnectionProfileCRUDCopyAndPersistence(t *testing.T) {
 		t.Fatalf("settings contain secret material: %s", contents)
 	}
 	var persisted Settings
-	if err := json.Unmarshal(contents, &persisted); err != nil {
+	if err := toml.NewDecoder(strings.NewReader(string(contents))).SetTagName("json").Decode(&persisted); err != nil {
 		t.Fatal(err)
 	}
 	if len(persisted.ConnectionProfiles) != 1 || !reflect.DeepEqual(persisted.ConnectionProfiles[0], profile) {

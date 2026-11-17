@@ -215,6 +215,10 @@ type workbench struct {
 	connectionProfiles           []preferences.ConnectionProfile
 	selectedProfileID            string
 	profileDriver                string
+	profileTestFingerprint       string
+	profileTestState             uint8
+	profileTestMessage           string
+	profileTestDetails           string
 	profileName                  string
 	profileGroup                 string
 	profileEnvironment           string

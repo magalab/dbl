@@ -458,6 +458,7 @@ func (app *workbench) beginNewConnection() {
 		return
 	}
 	app.path = existingSQLitePath(app.path)
+	app.resetConnectionProfileTest()
 	app.selectedProfileID = ""
 	app.profileDriver = preferences.DriverSQLite
 	app.profileName, app.profileGroup = "", ""

@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/alicebob/miniredis/v2 v2.35.0
 	github.com/egoist/mygo v0.9.2
+	github.com/pelletier/go-toml v1.9.5
 	github.com/go-sql-driver/mysql v1.10.2
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.13.0

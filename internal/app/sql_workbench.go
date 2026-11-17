@@ -397,18 +397,20 @@ func (app *workbench) closeConnection() {
 	app.redisCursor = 0
 	app.redisHasMore = false
 	app.redisValueCursor = ""
-	app.activeQuery.columns = nil
-	app.activeQuery.resultSQL = ""
-	app.activeQuery.resultPath = ""
-	app.activeQuery.resultConnectionID = ""
-	app.activeQuery.activeHistoryID = 0
-	app.activeQuery.resultWindow = sqlstream.Window{MaxRows: maxDisplayedRows, MaxBytes: maxRetainedResultBytes}
-	app.activeQuery.resultTotal = 0
-	app.activeQuery.resultTotalKnown = false
-	app.activeQuery.resultTotalCounted = false
-	app.activeQuery.resultCountCancelled = false
-	app.activeQuery.streamStopped = false
-	app.resetResultOrder()
+	if app.activeQuery != nil {
+		app.activeQuery.columns = nil
+		app.activeQuery.resultSQL = ""
+		app.activeQuery.resultPath = ""
+		app.activeQuery.resultConnectionID = ""
+		app.activeQuery.activeHistoryID = 0
+		app.activeQuery.resultWindow = sqlstream.Window{MaxRows: maxDisplayedRows, MaxBytes: maxRetainedResultBytes}
+		app.activeQuery.resultTotal = 0
+		app.activeQuery.resultTotalKnown = false
+		app.activeQuery.resultTotalCounted = false
+		app.activeQuery.resultCountCancelled = false
+		app.activeQuery.streamStopped = false
+		app.resetResultOrder()
+	}
 	app.busy = true
 	app.status = app.localized("正在关闭数据库连接…")
 	go func() {

@@ -34,6 +34,7 @@ func existingSQLitePath(path string) string {
 }
 
 func (app *workbench) loadConnectionProfile(profile preferences.ConnectionProfile) {
+	app.resetConnectionProfileTest()
 	app.selectedProfileID = profile.ID
 	app.profileDriver = profile.Driver
 	app.profileName = profile.Name
@@ -253,6 +254,11 @@ func (app *workbench) connectionProfileDraft() (preferences.ConnectionProfile, e
 
 func (app *workbench) saveConnectionProfile(connectAfterSave bool) {
 	if app.busy || app.preferences == nil {
+		return
+	}
+	if app.profileTestState != profileTestPassed || app.profileTestFingerprint != app.connectionProfileTestFingerprint() {
+		app.profileTestMessage = "请先测试连接；测试成功且配置未变化后才能保存。"
+		app.profileTestState = profileTestFailed
 		return
 	}
 	profile, err := app.connectionProfileDraft()

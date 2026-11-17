@@ -263,6 +263,12 @@ func (app *workbench) ensureProfileTreeSnapshot(profile preferences.ConnectionPr
 }
 
 func (app *workbench) ensureProfileTreeConnection(profile preferences.ConnectionProfile) {
+	if app.busy || app.exporting || app.dialogOpen {
+		return
+	}
+	if app.treeConnectionErrors[profile.ID] != "" {
+		return
+	}
 	if app.treeConnectionLoading[profile.ID] {
 		return
 	}

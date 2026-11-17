@@ -81,7 +81,7 @@ func (app *workbench) workspaceTabs(c *ui.Context) {
 						closeButton := ui.Button(c, "").Label(app.localized("关闭") + " " + title).Tooltip(app.localized("关闭") + " " + title)
 						closeButton.Children(func() { ui.Icon(c, actionIcons["close"]).Size(14, 14) })
 						closeButton.Size(24, 24).Padding(0).Shrink(0).Background(ui.Color{}).BorderWidth(0).TextColor(foreground)
-						closeButton.Disabled(app.workspaceCount() <= 1 || app.busy || app.exporting || app.dialogOpen)
+						closeButton.Disabled(app.busy || app.exporting || app.dialogOpen)
 						if closeButton.Clicked() {
 							app.closeWorkspace(index)
 						}

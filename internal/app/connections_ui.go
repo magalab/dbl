@@ -314,6 +314,7 @@ func (app *workbench) changeConnectionProfileDriver(driver string) {
 		return
 	}
 	app.profileDriver = driver
+	app.resetConnectionProfileTest()
 	app.selectedProfileID = ""
 	app.profileHost, app.profilePort, app.profileDatabase, app.profileRedisDB = "", "", "", ""
 	app.profileRedisAliases = nil
@@ -531,6 +532,25 @@ func (app *workbench) connectionProfileForm(c *ui.Context) {
 
 func (app *workbench) connectionProfileFormActions(c *ui.Context) {
 	disabled := app.busy || app.exporting || app.dialogOpen
+	profileTestMessage := app.profileTestMessage
+	profileTestState := app.profileTestState
+	if (app.profileTestState == profileTestPassed || app.profileTestState == profileTestFailed) && app.profileTestFingerprint != app.connectionProfileTestFingerprint() {
+		profileTestMessage = "连接配置已更改，请重新测试。"
+		profileTestState = profileTestNone
+	}
+	if profileTestMessage != "" {
+		color := c.Theme().Warning
+		switch profileTestState {
+		case profileTestPassed:
+			color = c.Theme().Success
+		case profileTestFailed:
+			color = c.Theme().Danger
+		}
+		ui.Text(c, app.localized(profileTestMessage)).TextColor(color).Padding(4, 8)
+	}
+	if app.profileTestDetails != "" && profileTestState == profileTestFailed {
+		ui.Text(c, app.profileTestDetails).TextColor(c.Theme().TextMuted).Selectable().Padding(4, 8)
+	}
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
 		ui.Spacer(c)
 		ui.Toolbar(c, func() {
@@ -541,6 +561,9 @@ func (app *workbench) connectionProfileFormActions(c *ui.Context) {
 				app.testConnectionProfileFromForm()
 			}
 			saveDisabled := disabled || app.preferences == nil || strings.TrimSpace(app.profileName) == ""
+			if app.profileTestState != profileTestPassed || app.profileTestFingerprint != app.connectionProfileTestFingerprint() {
+				saveDisabled = true
+			}
 			if app.profileDriver == preferences.DriverSQLite && strings.TrimSpace(app.path) == "" {
 				saveDisabled = true
 			} else if app.profileDriver != preferences.DriverSQLite && strings.TrimSpace(app.profileHost) == "" {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -15,8 +16,37 @@ import (
 	"github.com/magalab/dbl/internal/postgresql"
 	"github.com/magalab/dbl/internal/preferences"
 	redisadapter "github.com/magalab/dbl/internal/redis"
+	"github.com/magalab/dbl/internal/safeerror"
 	"github.com/magalab/dbl/internal/sqlite"
 )
+
+const (
+	profileTestNone uint8 = iota
+	profileTestRunning
+	profileTestPassed
+	profileTestFailed
+)
+
+func (app *workbench) resetConnectionProfileTest() {
+	app.profileTestState = profileTestNone
+	app.profileTestMessage = ""
+	app.profileTestDetails = ""
+	app.profileTestFingerprint = ""
+}
+
+func (app *workbench) connectionProfileTestFingerprint() string {
+	profile, err := app.connectionProfileDraft()
+	if err != nil {
+		return ""
+	}
+	profile.Name = ""
+	profile.Group = ""
+	profile.Environment = ""
+	profile.Favorite = false
+	profile.RedisDatabaseAliases = nil
+	value := fmt.Sprintf("%#v|%s|%s|%s", profile, app.profileSecret, app.profileTLSCertPath, app.profileTLSKeyPath)
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
+}
 
 func (app *workbench) testConnectionProfileFromForm() {
 	if app.busy || app.exporting || app.dialogOpen {
@@ -25,13 +55,15 @@ func (app *workbench) testConnectionProfileFromForm() {
 	profile, cleanup, err := app.prepareConnectionProfileTest()
 	if err != nil {
 		cleanup()
-		app.reportError("测试连接失败", err)
+		app.profileTestState = profileTestFailed
+		app.profileTestMessage = "连接测试失败。"
+		app.profileTestDetails = safeerror.Display(err)
+		app.profileTestFingerprint = app.connectionProfileTestFingerprint()
 		return
 	}
 
 	var connector connection.Connector
 	var timeout time.Duration
-	label := profile.Driver
 	switch profile.Driver {
 	case preferences.DriverSQLite:
 		access := sqlite.ReadWriteExisting
@@ -39,28 +71,31 @@ func (app *workbench) testConnectionProfileFromForm() {
 			access = sqlite.ReadOnly
 		}
 		connector = sqlite.Connector{Path: profile.Path, Access: access}
-		timeout, label = 10*time.Second, "SQLite"
+		timeout = 10 * time.Second
 	case preferences.DriverPostgreSQL:
 		connector = postgresql.Connector{Profile: profile, Vault: app.vault}
-		timeout, label = 20*time.Second, "PostgreSQL"
+		timeout = 20 * time.Second
 	case preferences.DriverMySQL:
 		connector = mysqladapter.Connector{Profile: profile, Vault: app.vault}
-		timeout, label = 20*time.Second, "MySQL"
+		timeout = 20 * time.Second
 	case preferences.DriverRedis:
 		connector = redisadapter.Connector{Profile: profile, Vault: app.vault}
-		timeout, label = 15*time.Second, "Redis"
+		timeout = 15 * time.Second
 	case preferences.DriverMongoDB:
 		connector = mongoadapter.Connector{Profile: profile, Vault: app.vault}
-		timeout, label = 20*time.Second, "MongoDB"
+		timeout = 20 * time.Second
 	case preferences.DriverEtcd:
 		connector = etcdadapter.Connector{Profile: profile, Vault: app.vault}
-		timeout, label = 20*time.Second, "etcd"
+		timeout = 20 * time.Second
 	default:
 		cleanup()
-		app.reportError("测试连接失败", fmt.Errorf("unsupported database driver: %s", profile.Driver))
+		app.profileTestState = profileTestFailed
+		app.profileTestMessage = "连接测试失败。"
+		app.profileTestDetails = safeerror.Display(fmt.Errorf("unsupported database driver: %s", profile.Driver))
+		app.profileTestFingerprint = app.connectionProfileTestFingerprint()
 		return
 	}
-	app.runConnectionProfileTest(label, connector, timeout, cleanup)
+	app.runConnectionProfileTest(connector, timeout, cleanup)
 }
 
 func (app *workbench) prepareConnectionProfileTest() (preferences.ConnectionProfile, func(), error) {
@@ -137,13 +172,16 @@ func (app *workbench) storeTemporaryTLSFile(path string) (credentials.Reference,
 	return app.vault.Store(data)
 }
 
-func (app *workbench) runConnectionProfileTest(label string, connector connection.Connector, timeout time.Duration, cleanup func()) {
+func (app *workbench) runConnectionProfileTest(connector connection.Connector, timeout time.Duration, cleanup func()) {
 	if app.busy || app.exporting || app.dialogOpen {
 		cleanup()
 		return
 	}
 	app.busy = true
-	app.status = app.localized("正在测试 ") + label + " 连接配置…"
+	app.profileTestState = profileTestRunning
+	app.profileTestMessage = "正在测试连接…"
+	app.profileTestDetails = ""
+	app.profileTestFingerprint = app.connectionProfileTestFingerprint()
 	go func() {
 		defer cleanup()
 		ctx, cancel := app.withTaskTimeout(timeout)
@@ -159,10 +197,14 @@ func (app *workbench) runConnectionProfileTest(label string, connector connectio
 		app.window.Update(func() {
 			app.busy = false
 			if err != nil {
-				app.reportError(label+" 连接测试失败", err)
+				app.profileTestState = profileTestFailed
+				app.profileTestMessage = "连接测试失败。"
+				app.profileTestDetails = safeerror.Display(err)
 				return
 			}
-			app.status = label + " 连接配置测试成功。"
+			app.profileTestState = profileTestPassed
+			app.profileTestMessage = "连接测试成功。"
+			app.profileTestDetails = ""
 		})
 	}()
 }

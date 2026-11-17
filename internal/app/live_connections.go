@@ -10,6 +10,7 @@ import (
 )
 
 func (app *workbench) registerLiveConnection(id string, conn connection.Connection, profile preferences.ConnectionProfile) {
+	delete(app.treeConnectionErrors, profile.ID)
 	if app.liveConnections == nil {
 		app.liveConnections = make(map[string]liveConnection)
 	}

@@ -1,6 +1,7 @@
 package preferences
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -362,7 +363,7 @@ func TestRememberSQLitePathsPersistsRecentListAndPrivatePermissions(t *testing.T
 		t.Fatalf("settings = %#v, want most recent paths %#v", got, wantPaths)
 	}
 
-	fileInfo, err := os.Stat(filepath.Join(dir, "settings.json"))
+	fileInfo, err := os.Stat(filepath.Join(dir, "settings.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,11 +404,17 @@ func TestOpenRestrictsExistingPreferencesDirectoryAndFile(t *testing.T) {
 	if store.Settings().Version != 1 {
 		t.Fatalf("settings version = %d, want 1", store.Settings().Version)
 	}
+	if _, err := os.Stat(filepath.Join(dir, "settings.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy JSON file was not removed after migration: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "settings.toml")); err != nil {
+		t.Fatalf("migrated TOML file is missing: %v", err)
+	}
 	if runtime.GOOS != "windows" {
 		for _, test := range []struct {
 			path string
 			want os.FileMode
-		}{{dir, 0o700}, {filepath.Join(dir, "settings.json"), 0o600}} {
+		}{{dir, 0o700}, {filepath.Join(dir, "settings.toml"), 0o600}} {
 			info, err := os.Stat(test.path)
 			if err != nil {
 				t.Fatal(err)
@@ -493,7 +500,7 @@ func TestSQLiteProfileCRUDPersistsOnlyConnectionMetadata(t *testing.T) {
 	if profile.ID == "" {
 		t.Fatal("created profile has no stable ID")
 	}
-	contents, err := os.ReadFile(filepath.Join(dir, "settings.json"))
+	contents, err := os.ReadFile(filepath.Join(dir, "settings.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -615,7 +622,7 @@ func TestSQLiteProfileLimit(t *testing.T) {
 
 func TestOpenRejectsNonRegularPreferencesFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "settings.json")
+	path := filepath.Join(dir, "settings.toml")
 	if err := os.Mkdir(path, 0o700); err != nil {
 		t.Fatal(err)
 	}

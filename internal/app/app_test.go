@@ -1263,7 +1263,7 @@ func TestQueryWorkspacesKeepEditorAndResultsIndependent(t *testing.T) {
 	}
 }
 
-func TestClosingWorkspaceKeepsActiveWorkspaceAndAtLeastOneTab(t *testing.T) {
+func TestClosingWorkspaceAllowsClosingLastTab(t *testing.T) {
 	app := newTestWorkbench()
 	app.addWorkspace()
 	second := app.activeQuery
@@ -1272,8 +1272,27 @@ func TestClosingWorkspaceKeepsActiveWorkspaceAndAtLeastOneTab(t *testing.T) {
 		t.Fatalf("after closing inactive tab: count=%d active=%d same=%v", len(app.workspaces), app.activeWorkspace, app.activeQuery == second)
 	}
 	app.closeWorkspace(0)
-	if len(app.workspaces) != 1 {
-		t.Fatalf("last workspace was closed: count=%d", len(app.workspaces))
+	if len(app.workspaces) != 0 || app.activeWorkspace != -1 || app.activeQuery != nil || app.queryWorkspaceRequested {
+		t.Fatalf("after closing last tab: count=%d active=%d query=%v requested=%v", len(app.workspaces), app.activeWorkspace, app.activeQuery, app.queryWorkspaceRequested)
+	}
+}
+
+func TestClosingLastVisibleWorkspaceHidesTabsAndRestoresImplicitWorkspace(t *testing.T) {
+	implicit := newQueryWorkspace(1)
+	implicit.implicitQuery = true
+	visible := newQueryWorkspace(2)
+	visible.connectionView = true
+	app := &workbench{
+		workspaces:              []*queryWorkspace{implicit, visible},
+		activeWorkspace:         1,
+		activeQuery:             visible,
+		queryWorkspaceRequested: true,
+	}
+
+	app.removeWorkspace(1)
+
+	if len(app.workspaces) != 1 || app.workspaces[0] != implicit || app.activeWorkspace != 0 || app.activeQuery != implicit || app.queryWorkspaceRequested {
+		t.Fatalf("after closing last visible workspace: workspaces=%d active=%d query=%v requested=%v", len(app.workspaces), app.activeWorkspace, app.activeQuery == implicit, app.queryWorkspaceRequested)
 	}
 }
 
@@ -1285,6 +1304,55 @@ func TestWorkspaceLimit(t *testing.T) {
 	app.addWorkspace()
 	if len(app.workspaces) != maxWorkspaces {
 		t.Fatalf("workspace count = %d, want limit %d", len(app.workspaces), maxWorkspaces)
+	}
+}
+
+func TestFailedTreeConnectionDoesNotRetryAutomatically(t *testing.T) {
+	app := newTestWorkbench()
+	profile := preferences.ConnectionProfile{ID: "mysql-offline", Driver: preferences.DriverMySQL, Host: "127.0.0.1", Port: 3306}
+	app.treeConnectionErrors = map[string]string{profile.ID: "connection refused"}
+
+	app.ensureProfileTreeConnection(profile)
+
+	if app.treeConnectionLoading[profile.ID] {
+		t.Fatal("failed tree connection restarted automatically")
+	}
+}
+
+func TestRegisteringConnectionClearsStaleTreeConnectionError(t *testing.T) {
+	app := newTestWorkbench()
+	profile := preferences.ConnectionProfile{ID: "mysql-offline", Driver: preferences.DriverMySQL}
+	app.treeConnectionErrors = map[string]string{profile.ID: "connection refused"}
+	conn := &mock.Connection{}
+
+	app.registerLiveConnection(profileConnectionID(profile), conn, profile)
+
+	if app.treeConnectionErrors[profile.ID] != "" {
+		t.Fatalf("stale tree connection error was not cleared: %q", app.treeConnectionErrors[profile.ID])
+	}
+}
+
+func TestConnectionProfileTestFingerprintIgnoresDisplayMetadata(t *testing.T) {
+	app := newTestWorkbench()
+	app.profileDriver = preferences.DriverMySQL
+	app.profileName = "Analytics"
+	app.profileGroup = "Development"
+	app.profileEnvironment = preferences.EnvironmentDevelopment
+	app.profileHost = "db.example.test"
+	app.profilePort = "3306"
+	app.profileDatabase = "analytics"
+
+	before := app.connectionProfileTestFingerprint()
+	app.profileName = "Production analytics"
+	app.profileGroup = "Production"
+	app.profileFavorite = true
+	after := app.connectionProfileTestFingerprint()
+	if before != after {
+		t.Fatal("display-only profile changes invalidated the connection test")
+	}
+	app.profileHost = "other.example.test"
+	if before == app.connectionProfileTestFingerprint() {
+		t.Fatal("connection host change did not invalidate the connection test")
 	}
 }
 

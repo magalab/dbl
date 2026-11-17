@@ -11,9 +11,6 @@ import (
 func (app *workbench) connectionContextMenu(menu *ui.Menu, profile preferences.ConnectionProfile, connected bool) {
 	id := app.profileLiveSessionID(profile)
 	if connected {
-		if !app.profileIsSelected(profile) && menu.Item("⇄  "+app.localized("切换到此连接")).Chosen() {
-			app.openSavedProfile(profile)
-		}
 		if menu.Item("⏏  " + app.localized("关闭连接")).Disabled(app.busy || app.exporting || app.dialogOpen).Chosen() {
 			app.closeProfileConnection(profile)
 		}

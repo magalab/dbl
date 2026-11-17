@@ -187,7 +187,7 @@ func isSQLQueryWorkspace(workspace *queryWorkspace) bool {
 }
 
 func (app *workbench) closeWorkspace(index int) {
-	if app.workspaceCount() <= 1 || index < 0 || index >= len(app.workspaces) || app.workspaces[index].implicitQuery || app.busy || app.exporting || app.dialogOpen {
+	if index < 0 || index >= len(app.workspaces) || app.workspaces[index].implicitQuery || app.busy || app.exporting || app.dialogOpen {
 		return
 	}
 	workspace := app.workspaces[index]
@@ -252,11 +252,28 @@ func (app *workbench) stopCursorForWorkspaceChange(switchTo, closeIndex int) {
 }
 
 func (app *workbench) removeWorkspace(index int) {
+	if index < 0 || index >= len(app.workspaces) {
+		return
+	}
 	if index >= 0 && index < len(app.workspaces) {
 		app.cancelResultCountForWorkspace(app.workspaces[index])
 	}
 	wasActive := index == app.activeWorkspace
 	app.workspaces = append(app.workspaces[:index], app.workspaces[index+1:]...)
+	if app.workspaceCount() == 0 {
+		if implicitIndex, implicit := app.implicitQueryWorkspace(); implicit != nil {
+			app.activeWorkspace = implicitIndex
+			app.activeQuery = implicit
+		} else {
+			app.activeWorkspace = -1
+			app.activeQuery = nil
+		}
+		app.queryWorkspaceRequested = false
+		app.status = app.localized("已关闭工作区。")
+		app.errorSummary = ""
+		app.errorDetails = ""
+		return
+	}
 	if !wasActive && index < app.activeWorkspace {
 		app.activeWorkspace--
 	}
