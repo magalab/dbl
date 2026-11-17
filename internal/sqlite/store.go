@@ -212,6 +212,14 @@ func (store *Store) StartQuery(ctx context.Context, statement string) (*sqlstrea
 	return sqlstream.Open(ctx, store.db, statement)
 }
 
+func (store *Store) ExecStatement(ctx context.Context, statement string) (int64, error) {
+	result, err := store.db.ExecContext(ctx, statement)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 // Export reruns a statement on a separate read-only connection and streams
 // the complete result to output without retaining it in memory.
 func (store *Store) Export(ctx context.Context, statement string, format sqlstream.ExportFormat, output io.Writer) (int64, error) {

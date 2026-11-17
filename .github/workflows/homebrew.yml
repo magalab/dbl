@@ -1,0 +1,97 @@
+name: Homebrew Tap
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable release tag (e.g. v0.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homebrew-tap
+  cancel-in-progress: false
+
+jobs:
+  homebrew:
+    name: Update Homebrew Tap
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - name: Download published release and verify checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease --jq '.isDraft or .isPrerelease')" = false
+          test "$(gh api "repos/$GH_REPO/releases/latest" --jq .tag_name)" = "$RELEASE_TAG"
+          version="${RELEASE_TAG#v}"
+          asset="dbl-${version}-arm64.dmg"
+          mkdir release-assets
+          gh release download "$RELEASE_TAG" --pattern "$asset" --pattern SHA256SUMS --dir release-assets
+          cd release-assets
+          grep -F "  $asset" SHA256SUMS > macos.sha256
+          test "$(wc -l < macos.sha256)" -eq 1
+          sha256sum --check macos.sha256
+
+      - name: Checkout tap
+        uses: actions/checkout@v7
+        with:
+          repository: magalab/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Update DBL cask
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+
+          tag = os.environ['RELEASE_TAG']
+          version = tag.removeprefix('v')
+          asset = f'dbl-{version}-arm64.dmg'
+          checksum = hashlib.sha256((Path('release-assets') / asset).read_bytes()).hexdigest()
+          cask = f'''cask "dbl" do
+            version "{version}"
+            sha256 "{checksum}"
+
+            url "https://github.com/magalab/dbl/releases/download/v#{{version}}/dbl-#{{version}}-arm64.dmg"
+            name "DBL"
+            desc "Native desktop database workbench"
+            homepage "https://github.com/magalab/dbl"
+
+            depends_on arch: :arm64
+            depends_on macos: :sequoia
+
+            app "DBL.app"
+          end
+          '''
+          casks = Path('tap/Casks')
+          casks.mkdir(parents=True, exist_ok=True)
+          (casks / 'dbl.rb').write_text(cask)
+          PY
+          ruby -c tap/Casks/dbl.rb
+
+      - name: Commit cask
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/dbl.rb
+          if git diff --cached --quiet; then
+            echo "DBL cask is already up to date"
+            exit 0
+          fi
+          git commit -m "dbl $RELEASE_TAG"
+          git push

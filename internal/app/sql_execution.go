@@ -156,6 +156,30 @@ func (app *workbench) executeSQL() {
 		if oldCursor != nil {
 			_ = oldCursor.Close()
 		}
+		if _, eligible := dmlStatementVerb(statement); eligible {
+			if executor, ok := app.store.(connection.SQLExecutor); ok {
+				count, execErr := executor.ExecStatement(ctx, statement)
+				timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
+				cancelled := errors.Is(ctx.Err(), context.Canceled)
+				cancel()
+				app.window.Update(func() {
+					app.busy = false
+					app.cancelQuery = nil
+					app.queryContext = nil
+					if timedOut {
+						app.status = fmt.Sprintf("查询超过 %s，已停止。", queryTimeout)
+					} else if cancelled {
+						app.status = app.localized("查询已取消。")
+					} else if execErr != nil {
+						app.reportError("查询失败", execErr)
+					} else {
+						app.status = fmt.Sprintf(app.localized("SQL 执行完成 · 影响 %d 行"), count)
+					}
+					app.updateHistory(historyID, started, app.status)
+				})
+				return
+			}
+		}
 		cursor, err := app.store.StartQuery(ctx, statement)
 		if err != nil {
 			timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
@@ -220,6 +244,48 @@ func (app *workbench) executeSQL() {
 			app.updateHistory(historyID, started, app.status)
 		})
 	}()
+}
+
+// dmlStatementVerb conservatively recognizes direct DML without RETURNING.
+// CTE-prefixed and uncommon dialect statements remain on the query path.
+func dmlStatementVerb(statement string) (string, bool) {
+	rest := strings.TrimSpace(statement)
+	for {
+		switch {
+		case strings.HasPrefix(rest, "--"):
+			if end := strings.IndexByte(rest, '\n'); end >= 0 {
+				rest = strings.TrimSpace(rest[end+1:])
+			} else {
+				return "", false
+			}
+		case strings.HasPrefix(rest, "/*"):
+			if end := strings.Index(rest[2:], "*/"); end >= 0 {
+				rest = strings.TrimSpace(rest[end+4:])
+			} else {
+				return "", false
+			}
+		default:
+			goto verb
+		}
+	}
+verb:
+	// Only one direct statement can use Exec: a following SELECT must retain
+	// its result set. Even semicolons in literals conservatively use Query.
+	rest = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(rest), ";"))
+	if strings.Contains(rest, ";") {
+		return "", false
+	}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 || strings.Contains(strings.ToUpper(rest), "RETURNING") {
+		return "", false
+	}
+	verb := strings.ToUpper(strings.Trim(fields[0], ";"))
+	switch verb {
+	case "INSERT", "UPDATE", "DELETE", "REPLACE":
+		return verb, true
+	default:
+		return "", false
+	}
 }
 
 func (app *workbench) fetchNextResultPage() {

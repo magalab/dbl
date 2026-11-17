@@ -10,6 +10,8 @@ package mysql
 
 import (
 	"bytes"
+	"database/sql/driver"
+	"encoding/binary"
 	"errors"
 	"net"
 	"testing"
@@ -35,6 +37,7 @@ type mockConn struct {
 	writes        int
 	maxReads      int
 	maxWrites     int
+	writeErrors   map[int]error
 }
 
 func (m *mockConn) Read(b []byte) (n int, err error) {
@@ -58,6 +61,9 @@ func (m *mockConn) Write(b []byte) (n int, err error) {
 	}
 
 	m.writes++
+	if err := m.writeErrors[m.writes]; err != nil {
+		return 0, err
+	}
 	if m.maxWrites > 0 && m.writes > m.maxWrites {
 		return 0, errConnTooManyWrites
 	}
@@ -107,6 +113,115 @@ func newRWMockConn(sequence uint8) (*mockConn, *mysqlConn) {
 		sequence:         sequence,
 	}
 	return conn, mc
+}
+
+func TestWriteExecutePacketValidatesArgsBeforeWriting(t *testing.T) {
+	conn, mc := newRWMockConn(42)
+	mc.maxAllowedPacket = 128
+	stmt := mysqlStmt{mc: mc, id: 1, paramCount: 2}
+
+	err := stmt.writeExecutePacket([]driver.Value{
+		bytes.Repeat([]byte{'a'}, 64), // 64 'a' bytes, large enough to use long data.
+		time.Date(10000, time.January, 1, 0, 0, 0, 0, time.UTC),
+	})
+	if err == nil {
+		t.Fatal("expected invalid time error")
+	}
+	if got, want := err.Error(), "year is not in the range [1, 9999]: 10000"; got != want {
+		t.Fatalf("unexpected error: got %q, want %q", got, want)
+	}
+	if conn.writes != 0 {
+		t.Fatalf("unexpected writes before all arguments were validated: %d", conn.writes)
+	}
+	if mc.sequence != 42 {
+		t.Fatalf("packet sequence changed before all arguments were validated: got %d, want 42", mc.sequence)
+	}
+}
+
+func TestWriteExecutePacketValidatesSizeBeforeWriting(t *testing.T) {
+	conn, mc := newRWMockConn(42)
+	mc.maxAllowedPacket = 16
+	stmt := mysqlStmt{mc: mc, id: 1, paramCount: 2}
+
+	err := stmt.writeExecutePacket([]driver.Value{
+		bytes.Repeat([]byte{'a'}, 64), // 64 'a' bytes, large enough to use long data.
+		int64(1),
+	})
+	if err != ErrPktTooLarge {
+		t.Fatalf("unexpected error: got %v, want %v", err, ErrPktTooLarge)
+	}
+	if conn.writes != 0 {
+		t.Fatalf("unexpected writes before packet size was validated: %d", conn.writes)
+	}
+	if mc.sequence != 42 {
+		t.Fatalf("packet sequence changed before packet size was validated: got %d, want 42", mc.sequence)
+	}
+}
+
+func TestWriteExecutePacketSendsLongDataBeforeExecute(t *testing.T) {
+	conn, mc := newRWMockConn(42)
+	mc.maxAllowedPacket = 128
+	stmt := mysqlStmt{mc: mc, id: 1, paramCount: 2}
+
+	err := stmt.writeExecutePacket([]driver.Value{
+		bytes.Repeat([]byte{'a'}, 64),         // 64 'a' bytes as a []byte long-data parameter.
+		string(bytes.Repeat([]byte{'b'}, 64)), // 64 'b' bytes as a string long-data parameter.
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var commands []byte
+	for written := conn.written; len(written) > 0; {
+		packetLen := 4 + getUint24(written)
+		if packetLen > len(written) {
+			t.Fatalf("invalid packet length: got %d, remaining bytes %d", packetLen, len(written))
+		}
+		commands = append(commands, written[4]) // The command is the first byte after the packet header.
+		written = written[packetLen:]
+	}
+	if want := []byte{comStmtSendLongData, comStmtSendLongData, comStmtExecute}; !bytes.Equal(commands, want) {
+		t.Fatalf("unexpected command order: got %v, want %v", commands, want)
+	}
+}
+
+func TestWriteExecutePacketResetsStmtAfterLongDataError(t *testing.T) {
+	conn, mc := newRWMockConn(42)
+	mc.maxAllowedPacket = 128
+	stmt := mysqlStmt{mc: mc, id: 1, paramCount: 2}
+	conn.writeErrors = map[int]error{2: errors.New("long data write failed")}
+	conn.queuedReplies = [][]byte{{
+		0x07, 0x00, 0x00, 0x01, // Packet header: 7-byte payload, sequence 1.
+		iOK,        // OK packet header.
+		0x00,       // Zero affected rows.
+		0x00,       // Zero last insert ID.
+		0x02, 0x00, // SERVER_STATUS_AUTOCOMMIT.
+		0x00, 0x00, // Zero warnings.
+	}}
+
+	err := stmt.writeExecutePacket([]driver.Value{
+		bytes.Repeat([]byte{'a'}, 64), // 64 'a' bytes sent successfully as long data.
+		bytes.Repeat([]byte{'b'}, 64), // 64 'b' bytes whose long-data write fails.
+	})
+	if err != errBadConnNoWrite {
+		t.Fatalf("unexpected error: got %v, want %v", err, errBadConnNoWrite)
+	}
+
+	var commands []byte
+	for written := conn.written; len(written) > 0; {
+		packetLen := 4 + getUint24(written)
+		if packetLen > len(written) {
+			t.Fatalf("invalid packet length: got %d, remaining bytes %d", packetLen, len(written))
+		}
+		commands = append(commands, written[4]) // The command is the first byte after the packet header.
+		written = written[packetLen:]
+	}
+	if want := []byte{comStmtSendLongData, comStmtReset}; !bytes.Equal(commands, want) {
+		t.Fatalf("unexpected command order: got %v, want %v", commands, want)
+	}
+	if len(conn.data) != 0 {
+		t.Fatal("COM_STMT_RESET response was not consumed")
+	}
 }
 
 func TestReadPacketSingleByte(t *testing.T) {
@@ -353,5 +468,163 @@ func TestRegression801(t *testing.T) {
 		47, 85, 75, 109, 99, 51, 77, 50, 64}
 	if !bytes.Equal(authData, expectedAuthData) {
 		t.Errorf("expected authData '%v', got '%v'", expectedAuthData, authData)
+	}
+}
+
+// ColumnDefinition41 carries a two-byte collation ID, unlike the handshake.
+func TestReadColumnsCollation(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		collation    uint16
+		databaseType string
+	}{
+		{"binary", 63, "VARBINARY"},
+		{"utf8mb4_bg_0900_as_cs", 319, "VARCHAR"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn, mc := newRWMockConn(0)
+			column := []byte{3, 'd', 'e', 'f', 0, 0, 0, 1, 'v', 0, 12,
+				byte(tc.collation), byte(tc.collation >> 8), 16, 0, 0, 0,
+				byte(fieldTypeVarString), byte(flagNotNULL), 0, 0, 0, 0}
+			conn.data = append([]byte{byte(len(column)), 0, 0, 0}, column...)
+			conn.data = append(conn.data, 5, 0, 0, 1, 0xfe, 0, 0, 2, 0)
+			columns, err := mc.readColumns(1, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := uint16(columns[0].charSet); got != tc.collation {
+				t.Errorf("collation = %d; want %d", got, tc.collation)
+			}
+			if got := columns[0].typeDatabaseName(); got != tc.databaseType {
+				t.Errorf("DatabaseTypeName = %s; want %s", got, tc.databaseType)
+			}
+		})
+	}
+}
+
+// The handshake carries a one-byte collation ID. With a charset, a collation
+// missing from the collations map is set later by SET NAMES ... COLLATE.
+func TestHandshakeCollation(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		charsets  []string
+		collation string
+		want      byte
+		wantErr   bool
+	}{
+		{name: "default", want: defaultCollationID},
+		{name: "known", collation: "utf8mb4_unicode_ci", want: 224},
+		{name: "known with charset", charsets: []string{"utf8mb4"}, collation: "utf8mb4_unicode_ci", want: 224},
+		{name: "unknown with charset", charsets: []string{"utf8mb4"}, collation: "utf8mb4_0900_as_ci", want: defaultCollationID},
+		{name: "unknown", collation: "utf8mb4_0900_as_ci", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn, mc := newRWMockConn(1)
+			mc.cfg.charsets = tc.charsets
+			mc.cfg.Collation = tc.collation
+			err := mc.writeHandshakeResponsePacket(nil, defaultAuthPlugin)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error for collation %q", tc.collation)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := conn.written[12]; got != tc.want {
+				t.Errorf("collation ID = %d; want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func testHandshakePacket() []byte {
+	// A well-formed protocol 10 handshake with MySQL 8.0 style layout.
+	full := []byte{10}
+	full = append(full, "8.0.0\x00"...)
+	full = append(full, 1, 0, 0, 0)
+	full = append(full, "abcdefgh"...)
+	full = append(full, 0)
+	full = append(full, 0xff, 0xff)
+	full = append(full, 45, 2, 0)
+	full = append(full, 0xff, 0xff)
+	full = append(full, 21, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	full = append(full, "ijklmnopqrst\x00"...)
+	full = append(full, "mysql_native_password\x00"...)
+	return full
+}
+
+// A truncated initial handshake packet must result in ErrMalformPkt
+// instead of a panic.
+func TestReadHandshakePacketTruncated(t *testing.T) {
+	full := testHandshakePacket()
+
+	readFull := func(payload []byte) ([]byte, capabilityFlag, extendedCapabilityFlag, string, error) {
+		conn, mc := newRWMockConn(0)
+		conn.data = makePacket(0, payload)
+		return mc.readHandshakePacket()
+	}
+	read := func(payload []byte) error {
+		_, _, _, _, err := readFull(payload)
+		return err
+	}
+
+	authData, capabilities, extendedCapabilities, plugin, err := readFull(full)
+	if err != nil {
+		t.Fatalf("complete handshake: unexpected error: %v", err)
+	}
+	if string(authData) != "abcdefghijklmnopqrst" {
+		t.Errorf("complete handshake: got cipher %q, want %q", authData, "abcdefghijklmnopqrst")
+	}
+	if plugin != "mysql_native_password" {
+		t.Errorf("complete handshake: got plugin %q, want %q", plugin, "mysql_native_password")
+	}
+	if capabilities != 0xffffffff || extendedCapabilities != 0 {
+		t.Errorf("complete handshake: unexpected capabilities %x / %x", capabilities, extendedCapabilities)
+	}
+
+	// Every strict prefix that is cut inside the mandatory fields must be
+	// rejected. Prefixes ending right after the lower capability flags are
+	// valid (old style handshake), and so are those that only miss the
+	// trailing plugin name.
+	minValid := 1 + len("8.0.0\x00") + 4 + 8 + 1 + 2
+	minExtended := minValid + 3 + 2 + 7 + 4 + 12
+	mariaDB := bytes.Clone(full)
+	mariaDB[minValid-2] &^= byte(clientMySQL)
+	binary.LittleEndian.PutUint32(mariaDB[minValid+12:minValid+16], uint32(clientCacheMetadata))
+	for name, payload := range map[string][]byte{"MySQL": full, "MariaDB": mariaDB} {
+		t.Run(name, func(t *testing.T) {
+			for n := 1; n <= len(payload); n++ {
+				err := read(payload[:n])
+				switch {
+				case n < minValid, n > minValid && n < minExtended:
+					if err != ErrMalformPkt {
+						t.Errorf("prefix of %d bytes: got %v, want ErrMalformPkt", n, err)
+					}
+				default:
+					if err != nil {
+						t.Errorf("prefix of %d bytes: unexpected error: %v", n, err)
+					}
+				}
+			}
+		})
+	}
+	authData, capabilities, extendedCapabilities, plugin, err = readFull(full[:minValid])
+	if err != nil || string(authData) != "abcdefgh" || capabilities != 0xffff || extendedCapabilities != 0 || plugin != "" {
+		t.Errorf("old-style handshake: got %q, %x, %x, %q, %v", authData, capabilities, extendedCapabilities, plugin, err)
+	}
+	authData, capabilities, extendedCapabilities, plugin, err = readFull(mariaDB)
+	if err != nil || string(authData) != "abcdefghijklmnopqrst" || capabilities != 0xffffffff&^clientMySQL || extendedCapabilities != clientCacheMetadata || plugin != "mysql_native_password" {
+		t.Errorf("MariaDB handshake: got %q, %x, %x, %q, %v", authData, capabilities, extendedCapabilities, plugin, err)
+	}
+
+	// Protocol version followed by NUL only.
+	if err := read([]byte{10, 0}); err != ErrMalformPkt {
+		t.Errorf("got %v, want ErrMalformPkt", err)
+	}
+	// No NUL terminator after the server version.
+	if err := read([]byte{10, 'a', 'b'}); err != ErrMalformPkt {
+		t.Errorf("got %v, want ErrMalformPkt", err)
 	}
 }

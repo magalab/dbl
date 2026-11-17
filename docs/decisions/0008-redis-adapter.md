@@ -25,4 +25,4 @@
 
 - Redis ACL 可以在服务器侧提供更强的命令权限控制；应用 `只读` profile 当前主要在 UI/adapter 层拦截写操作，不能替代 Redis 服务端 ACL。
 - Redis 的 list offset 深分页仍受 Redis `LRANGE` 复杂度影响；超长集合元素虽限制 UI 保留量，网络响应本身仍可能包含超长字段。
-- cluster/sentinel 拓扑、keyspace notifications/watch、TTL 单独修改、批量删除、二进制编辑和用户自定义 CA/mTLS 需要后续设计。
+- cluster/sentinel 拓扑、keyspace notifications/watch、批量删除、二进制编辑和用户自定义 CA/mTLS 需要后续设计。TTL 单独修改已由 Redis 写入路径支持；请以当前 UI 和 adapter 实现为准，不再作为未实现项。

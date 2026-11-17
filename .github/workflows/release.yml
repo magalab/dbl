@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    needs: checks
+    name: Package (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            platform: darwin/arm64
+            artifact: macos-arm64
+          - runner: windows-latest
+            platform: windows/amd64
+            artifact: windows-amd64
+    defaults:
+      run:
+        shell: bash
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Validate release tag
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          version = json.load(open('mygo.json'))['version']
+          if os.environ['REF_TYPE'] == 'tag' and os.environ['REF_NAME'] != 'v' + version:
+              raise SystemExit('Tag must match mygo.json version: v' + version)
+          PY
+      - name: Install matching MyGo CLI
+        run: |
+          version=$(go list -m -f '{{.Version}}' github.com/egoist/mygo)
+          go install "github.com/egoist/mygo/cmd/mygo@$version"
+      - name: Build native packages
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+        run: mygo build -platform "$TARGET_PLATFORM" -sign - -skip-notarize
+      - name: Verify macOS ad-hoc signature and arm64 binary
+        if: runner.os == 'macOS'
+        run: |
+          app=$(find build -type d -name 'DBL.app' -print -quit)
+          test -n "$app"
+          codesign --verify --deep --strict "$app"
+          codesign -dv "$app" 2>&1 | grep -F 'Signature=adhoc'
+          test "$(lipo -archs "$app/Contents/MacOS/DBL")" = arm64
+      - name: Collect distributable files
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          target = Path('dist')
+          target.mkdir()
+          for source in Path('build').rglob('*'):
+              if source.is_file() and (source.name.endswith(('.dmg', '.zip')) or
+                                       ('-setup-' in source.name and source.suffix == '.exe')):
+                  destination = target / source.name
+                  if destination.exists():
+                      raise SystemExit('Duplicate artifact: ' + source.name)
+                  shutil.copy2(source, destination)
+          if not any(target.iterdir()):
+              raise SystemExit('No distributable files generated')
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  draft-release:
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Generate SHA-256 checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --generate-notes --title "DBL $RELEASE_TAG"
+          fi
+          gh release upload "$RELEASE_TAG" dist/* --clobber

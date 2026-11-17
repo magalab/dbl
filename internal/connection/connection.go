@@ -62,6 +62,12 @@ type SQL interface {
 	Export(context.Context, string, sqlstream.ExportFormat, io.Writer) (int64, error)
 }
 
+// SQLExecutor executes a statement that does not return rows and reports the
+// number of affected rows. Adapters must preserve their read-only guarantees.
+type SQLExecutor interface {
+	ExecStatement(context.Context, string) (int64, error)
+}
+
 // QueryCancel is an adapter-provided way to stop a query on the database
 // server. It complements context cancellation for drivers whose cancellation
 // only closes the client connection.

@@ -242,6 +242,37 @@ func (store *Store) StartQuery(ctx context.Context, statement string) (*sqlstrea
 	return sqlstream.Open(ctx, store.db, statement)
 }
 
+func (store *Store) ExecStatement(ctx context.Context, statement string) (int64, error) {
+	if store == nil || store.db == nil {
+		return 0, errors.New("PostgreSQL connection is closed")
+	}
+	if store.readOnly {
+		tx, err := store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+		if err != nil {
+			return 0, redactError("start read-only PostgreSQL statement", err, store.config.Password)
+		}
+		defer tx.Rollback()
+		result, err := tx.ExecContext(ctx, statement)
+		if err != nil {
+			return 0, redactError("execute read-only PostgreSQL statement", err, store.config.Password)
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return 0, redactError("read PostgreSQL affected row count", err, store.config.Password)
+		}
+		if err := tx.Commit(); err != nil {
+			return 0, redactError("finish read-only PostgreSQL statement", err, store.config.Password)
+		}
+		return count, nil
+	}
+	result, err := store.db.ExecContext(ctx, statement)
+	if err != nil {
+		return 0, redactError("execute PostgreSQL statement", err, store.config.Password)
+	}
+	count, err := result.RowsAffected()
+	return count, redactError("read PostgreSQL affected row count", err, store.config.Password)
+}
+
 func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterName string, limit int) (connection.ObjectPage, error) {
 	if limit <= 0 {
 		limit = 200

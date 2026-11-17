@@ -64,7 +64,7 @@ var englishUI = map[string]string{
 	"正在数据库中统计总数…":                             "Counting rows in the database…", "统计中…": "Counting…", "此查询不支持安全的总数统计。": "This query cannot be counted safely.",
 	"总数统计超过 %s，已停止。": "Count exceeded %s and was stopped.", "总数统计已取消。": "Count canceled.", "总数统计完成 · 共 %d 行": "Count complete · %d rows", "统计总数失败": "Count query failed",
 	"跳到当前已加载结果的最后一页": "Go to the last currently loaded page",
-	"查询完成，共 %d 行。":   "Query complete · %d rows.", "结果还在读取；下一页可继续加载。": "Results are still loading. Use Next Page to continue.",
+	"查询完成，共 %d 行。":   "Query complete · %d rows.", "SQL 执行完成 · 影响 %d 行": "SQL completed · %d rows affected", "结果还在读取；下一页可继续加载。": "Results are still loading. Use Next Page to continue.",
 	"查询结果还有后续页。":            "More result pages are available.",
 	"当前页显示 %d 行 · 已读取 %d 行": "Showing %d rows on this page · %d rows read", "当前页显示 %d 行 · 已读取 %d 行（查询未完成）": "Showing %d rows on this page · %d rows read (query incomplete)",
 	" · %d 行内容过大，未显示": " · %d oversized rows were not displayed", "较早的结果已释放": "Earlier results have been released", "排序仅作用于已读取的结果": "Sorting applies only to loaded results",

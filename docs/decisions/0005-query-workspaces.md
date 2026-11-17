@@ -26,4 +26,4 @@
 
 - 标签与结果在应用重启后不恢复；未启用本机历史保存时，查询历史只在当前进程存在。启用后，重启时的历史恢复到首个查询工作区。
 - 切换标签会停止当前未读取的结果游标，不支持在多个标签间并行读取。
-- PostgreSQL adapter 与 UI 最近有改动，尚待重新运行构建和单测；真实 PostgreSQL 服务及 TLS 连接验收未完成。
+- PostgreSQL adapter、真实 PostgreSQL 17 服务及 profile 私有 CA `verify-full` TLS 集成都已验证；当前剩余工作是桌面 UI 的人工验收，见发布准备清单。

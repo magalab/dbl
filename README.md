@@ -1,142 +1,86 @@
-# DBL 数据工作台
+# DBL
 
-当前实现已覆盖阶段 0–5 首版代码及阶段 6 的 SQL AI 草稿路径：六类数据源均有独立 capability，MongoDB/etcd 有专属工作区，AI provider 可配置并流式返回。连接配置支持开发/预发/生产环境标记、最近连接记录；所有可写 SQL 连接上的写语句及风险不明确的语句执行前都会显示环境、连接、当前选中对象、风险估计和完整 SQL 并要求确认。查询历史默认仅驻留内存；用户可在历史面板选择将最近 100 条记录保存在本机，并随时清除。PostgreSQL 17/MySQL 8.4 的真实服务集成，以及 Redis 8.10.2、MongoDB 8.0.34、etcd 3.7.3 的单节点集成都已验证；Redis ACL + verify-full TLS、MongoDB SCRAM + TLS 加密也已通过。目标 etcd 版本与 UI、AI 云 provider 和数据源桌面 bundle 交互仍待验收。阶段 7 已添加原生打包配置、应用图标、changelog 和发布阻塞清单；正式签名、干净环境安装/卸载及支持矩阵验收尚未完成。各阶段遗留的中文输入法、辅助技术和跨平台密钥库验收仍需继续。
+一个原生桌面数据库工作台，在同一个应用中连接 SQLite、PostgreSQL、MySQL、Redis、MongoDB 和 etcd。
 
-## 运行
+DBL 提供 SQL 查询、多标签工作区、数据浏览与编辑，以及可选的 AI 助手。界面支持中文和英文。
 
-需要 Go 1.27.1 或更新版本。macOS 开发时将二进制构建到固定路径：
+## 功能
+
+| 数据源 | 主要能力 |
+|---|---|
+| SQLite | 打开或新建数据库文件、只读连接、对象与列浏览、SQL 查询 |
+| PostgreSQL / MySQL | TLS 连接、数据库与 Schema 选择、SQL 查询与对象浏览 |
+| Redis | SCAN 分页、按类型筛选、键值读取与编辑、TTL、多选与批量删除 |
+| MongoDB | 数据库与集合浏览、find、聚合 pipeline、文档插入与 diff 后替换、索引查看 |
+| etcd | 多 endpoint、前缀与精确键读取、revision、lease TTL、watch、写入与删除预览 |
+
+- **查询工作区**：最多 16 个标签，SQL 格式化、取消查询、分页结果、复制单元格或行，以及 CSV / JSON 导出。
+- **连接管理**：分组、收藏、复制、最近连接、只读模式和开发 / 预发 / 生产环境标记。
+- **数据编辑**：SQL 表数据和结构修改通过预览与确认后提交；可写 SQL 连接上的写入及风险不明确的语句执行前也需确认。
+- **AI 助手**：配置多个 OpenAI-compatible provider，获取或选择模型，流式生成与解释 SQL、生成 MongoDB 查询草稿、提供 Redis / etcd 操作建议。
+
+## 安装
+
+当前发布目标为 **macOS 15+ arm64（Apple Silicon）** 和 **Windows 10/11 amd64（x64）**，通过 [GitHub Releases](https://github.com/magalab/dbl/releases) 直接分发。
+
+### macOS
+
+下载 arm64 的 DMG，将 `DBL.app` 拖入“应用程序”；也可下载 ZIP。应用使用 ad-hoc 签名，未经 Apple 公证，首次打开可能需要在系统设置中允许。
+
+首个正式版本发布且 Homebrew tap 更新后，可使用：
 
 ```sh
-mkdir -p build
-CGO_ENABLED=0 go build -o build/dbl .
+brew install --cask magalab/tap/dbl
 ```
 
-连接密码、API key 和 TLS 私钥保存在用户配置目录 `dbl/credentials/` 中，以 AES-GCM 加密；密钥文件与密文一起保存在该目录，目录和文件仅当前 OS 用户可读。复制配置目录时也会复制解密密钥，因此这能保护误读配置文件，不用于防护整个用户目录被复制或当前账户被攻破。旧版本保存在系统钥匙串中的凭据会在首次使用时迁移到本地加密存储；迁移旧凭据时系统可能要求授权一次，迁移后不再访问钥匙串。
+### Windows
 
-macOS 的应用菜单、Linux/Windows 的“帮助”菜单均提供“关于 DBL”，显示应用版本与 MyGo 版本。窗口中包含可拖动分栏、窄窗口切换为全页的 AI 助手面板、MyGo SQL 代码编辑器（含格式化按钮）、虚拟列表和结果表，以及最多 16 个互相独立的查询工作区标签。标签分别保留 SQL 文本、已读结果、排序和会话历史；格式化器保留字符串、标识符和注释内容，不解析或验证 SQL 方言。SQLite 连接由标签共享。切换有未读结果的标签会停止该标签的后续读取并保留已读部分。SQLite 原生文件选择打开/新建、关闭、可选只读连接、对象与列浏览、SQL 查询、取消、分页读取、单元格/行复制、CSV/JSON 导出和会话查询历史也已接入；会话内历史可按工作区清空并随退出清除，另可在历史面板选择本机持久保存。错误先显示摘要，用户可展开技术详情；已识别的数据库服务错误只显示错误码或通用类别，不回显服务端原文和可能包含的键值。数据库对象按 200 项 keyset 页面加载；查询结果默认每页 100 行，可选 25/50/100/200/500，页码字段回车可跳转到已加载页面，支持首页/上一页/下一页/当前已读末页。对符合安全读取条件的单条 SELECT，“统计总数”会在后台向数据库提交可取消的 COUNT 查询，不把全部结果行传到界面；复杂查询或可能有副作用的语句不提供此操作。统计仍可能受数据库执行计划和并发写入影响。结果内存有界，过大结果中较早的行可能释放，超大行不会显示。结果表支持按列排序，但只重排当前已读取的结果，不改变游标读取顺序，也不表示完整查询结果已排序。完整导出会在只读连接上重跑生成当前结果窗口的 SQL，而不是编辑器后来修改的文本；结果来源文件与当前连接不一致时会禁用导出。CSV/JSON 流式写入私有临时文件，完成并同步后才原子发布；取消或失败会清理临时文件，发布时拒绝覆盖已有目标。重新执行可能因非确定性 SQL 或并发写入而得到不同数据。
+下载 amd64 的 Setup 安装器，或解压 ZIP 后运行应用。
 
-本机偏好保存最近 SQLite 文件路径，连接 profile 支持分组、收藏、只读和复制。新建/编辑连接使用原生模态面板，侧栏只用于连接与对象导航；初次启动时左侧连接导航展开、AI 助手面板关闭；宽窗口可将 AI 助手固定在右侧并继续使用中央数据库工作区，窄窗口切换为全页 AI 工作区。未连接时显示连接欢迎页，连接后先显示概览；用户新建查询后才显示查询标签和编辑器。`⌘/Ctrl+N` 新建连接，`⌘/Ctrl+T` 新建查询工作区，`⌘/Ctrl+,` 打开设置窗口。设置窗口管理外观和查询历史，并提供 AI provider 设置入口。SQLite profile 可测试/打开；PostgreSQL/MySQL 支持 TLS、SQL 工作区和数据库/Schema 选择（切换后重连）；PostgreSQL 当前 schema 决定未限定对象名的 search_path，选择共享 schema 前应确认其创建者可信；SQLite 固定使用 main schema；Redis 支持 SCAN、类型读取、TTL 和基础写入；MongoDB 支持数据库/集合、find、基础 pipeline、分页文档与 diff 后写入；etcd 支持多 endpoint、TLS/认证、前缀/精确读取、revision/lease TTL 元数据、watch 和删除预览。Redis 不调用 `KEYS`。Mongo 聚合禁止 `$out`/`$merge`；etcd 删除默认精确键，前缀删除需显式开启并先查看数量。etcd mTLS 客户端证书和私钥、AI API key、数据库密码保存在本机加密凭据库，自定义 CA 使用 PEM 路径；MongoDB 支持 PEM 自定义 CA 并追加到系统根证书，暂不支持 mTLS 客户端证书。AI 助手可从顶部按钮或 `⌘/Ctrl+Shift+B` 在右侧打开；窄窗口中切换为全页工作区。面板支持添加、编辑、删除多个 OpenAI-compatible provider，每个配置独立的名称、endpoint、model 与本机加密 API key，并可在助手顶部切换，提供按任务分类的提示模板、多行提示编辑器和按上次请求重新生成（使用当前所选 provider），并生成/解释 SQL、生成 Mongo filter/pipeline 草稿及提供 Redis/etcd 文字建议。点击发送直接请求当前 provider，无需二次确认；任务、模板与上下文选项可展开，附带上下文仍逐项 opt-in；文档、键值和配置值不发送。AI 草稿不自动执行，插入 SQL 后执行前展示连接、语句和粗略风险分类并要求确认。MongoDB/Redis/etcd 已通过本机服务集成；Redis ACL + verify-full TLS、MongoDB SCRAM + TLS 加密及 profile 私有 CA verify-full 路径也已通过。目标 etcd 版本与 UI、AI 云 provider 与各数据源桌面 bundle 交互尚未完整验收。配置位于用户配置目录下的 `dbl/settings.json` 和 `dbl/credentials/`；Unix 权限是 `0700`/`0600`，Windows ACL 行为仍需验证。
+安装包与 Homebrew Cask 的可用状态以 Releases 和 [Homebrew tap](https://github.com/magalab/homebrew-tap) 为准。最新安装包的验收进度见 [发布准备清单](docs/release-readiness.md)。
 
+## 开始使用
 
-AI 的提示、请求预览和回答只在运行期间保留，可用“清空 AI 内容”立即清除；未保存 API key 有单独清除入口。
-回答可通过“复制 AI 回答”复制到系统剪贴板。
+1. 新建连接，选择数据源并填写连接信息；SQLite 可直接选择或新建文件。
+2. 连接后，从侧栏选择对象；SQL 数据源可新建查询标签编写并执行 SQL。
+3. 在设置中调整语言、外观和查询历史；需要 AI 时，再配置 provider 并打开助手。
 
-PostgreSQL/MySQL/MongoDB profile 支持附加 PEM 格式自定义 CA，并与系统根证书合并；只可与 verify-full/verify-ca 配合。客户端证书仅 etcd 支持。
+| 操作 | macOS | Windows |
+|---|---|---|
+| 新建连接 | `⌘ N` | `Ctrl N` |
+| 打开 SQLite 文件 | `⌘ O` | `Ctrl O` |
+| 新建查询 | `⌘ T` | `Ctrl T` |
+| 执行 SQL | `⌘ Enter` | `Ctrl Enter` |
+| 打开设置 | `⌘ ,` | `Ctrl ,` |
+| 切换侧栏 | `⌘ B` | `Ctrl B` |
+| 切换 AI 助手 | `⌘ Shift B` | `Ctrl Shift B` |
 
-Redis 工作区在键列表中显示类型和 TTL，支持按 string/hash/list/set/zset/stream 筛选、`SCAN` 分页、多选和批量删除。新增键可创建 String、Hash、List、Set、Sorted Set、Stream 和 JSON，并设置 TTL；JSON 需要服务器加载并授权 RedisJSON。详情区分页展示各类型的值，支持修改 String、更新 Hash 字段，以及向 List、Set、Sorted Set 和 Stream 追加数据；String 更新会保留原 TTL。类型筛选使用 `SCAN TYPE`，要求 Redis 6.0 或更新版本。
+## 数据与隐私
 
-## 验证
+AI 请求由用户点击发送后提交给所选 provider。SQL、错误、Schema 等上下文仅在明确勾选时附带；生成内容作为草稿保留，不会自动执行 SQL 或修改数据。
+
+数据库密码、API key 和 TLS 私钥保存在本机加密凭据库中，设置文件只保存凭据引用。密文和解密密钥位于同一私有目录，适用于防止直接从设置文件读取秘密，不能防护整个配置目录被复制或当前系统账户被攻破。配置位于用户配置目录的 `dbl/settings.json` 和 `dbl/credentials/`。
+
+查询历史默认只在内存保留最近 100 条，也可在历史面板开启本机保存并随时清除。SQL 草稿与结果不在重启后恢复。
+
+## 使用边界
+
+- 结果表排序仅作用于已读取的数据；完整排序应在 SQL 中使用 `ORDER BY`。
+- CSV / JSON 完整导出会在只读连接上重新执行生成结果的查询。并发写入或非确定性 SQL 可能使导出内容与当前显示不同。
+- 切换查询标签会停止原标签的后续结果读取，并保留已读部分；大结果集使用有界内存，较早的行可能被释放。
+- MongoDB 聚合禁止 `$out` / `$merge`；etcd 默认精确键删除，前缀删除需显式开启并先预览。
+
+## 开发
+
+使用 [go.mod](go.mod) 指定的 Go 版本，所有 SQLite 构建保持纯 Go：
 
 ```sh
+CGO_ENABLED=0 go run .
 CGO_ENABLED=0 go build ./...
-CGO_ENABLED=0 go test ./...
-CGO_ENABLED=0 go test -run '^$' -bench BenchmarkSortRowIndices10K -benchmem ./internal/sqlstream
-CGO_ENABLED=0 go test -run '^$' -bench BenchmarkSQLiteScan10K ./internal/sqlite
 ```
 
-`go test ./...`、`go test -race ./...`、`CGO_ENABLED=0 go vet ./...`、`CGO_ENABLED=0 go build ./...` 均已通过，且 darwin/amd64、linux/amd64+arm64、windows/amd64+arm64 纯 Go 交叉构建通过。PostgreSQL 17.11、MySQL 8.4.13、MongoDB 8.0.34、Redis 8.10.2 与 etcd 3.7.3 的单节点集成用例均已通过（etcd client 锁定 v3.6.16）；PostgreSQL/MySQL profile 私有 CA + verify-full、Redis ACL + verify-full TLS、MongoDB SCRAM + TLS 加密和 MongoDB profile 私有 CA + verify-full 路径也已通过。AI provider 已有 payload 安全、SSE 分块和取消等自动化测试；真实云 provider 抓包与 UI 人工验收仍未完成。
+开发、测试和数据库集成命令见 [开发与验证](docs/development.md)。发布工作流、签名策略及 Homebrew 自动更新见 [GitHub Actions 与发布](docs/github-actions.md)。
 
-要运行 PostgreSQL 集成用例，请使用专用的临时数据库。用例会创建并清理一个唯一的 `dbl_it_*` schema：
+## 许可
 
-```sh
-docker run --rm -d --name dbl-test-postgres \
-  -e POSTGRES_USER=dbltest -e POSTGRES_PASSWORD=dbltest-password \
-  -e POSTGRES_DB=dbltest -p 127.0.0.1:15432:5432 postgres:17-alpine
-DBL_TEST_POSTGRES_HOST=127.0.0.1 DBL_TEST_POSTGRES_PORT=15432 \
-  DBL_TEST_POSTGRES_DATABASE=dbltest DBL_TEST_POSTGRES_USERNAME=dbltest \
-  DBL_TEST_POSTGRES_PASSWORD=dbltest-password \
-  go test ./internal/postgresql -run '^TestPostgreSQLIntegration$' -v
-# For a TLS-enabled service with a server certificate matching DBL_TEST_POSTGRES_HOST,
-# use these settings instead of the plaintext settings above.
-DBL_TEST_POSTGRES_HOST=127.0.0.1 DBL_TEST_POSTGRES_PORT=15432 \
-DBL_TEST_POSTGRES_DATABASE=dbltest DBL_TEST_POSTGRES_USERNAME=dbltest \
-DBL_TEST_POSTGRES_PASSWORD=dbltest-password DBL_TEST_POSTGRES_TLS_MODE=verify-full \
-DBL_TEST_POSTGRES_CA=/path/to/test-ca.pem \
-  go test ./internal/postgresql -run '^TestPostgreSQLIntegration$' -v
-docker stop dbl-test-postgres
-```
-
-MySQL 集成用例可用专用的临时数据库运行。用例会在该数据库中创建并清理唯一的 `dbl_it_*` 表：
-
-```sh
-docker run --rm -d --name dbl-test-mysql \
-  -e MYSQL_ROOT_PASSWORD=root-test-password \
-  -e MYSQL_DATABASE=dbltest -e MYSQL_USER=dbltest \
-  -e MYSQL_PASSWORD=dbltest-password \
-  -p 127.0.0.1:13306:3306 mysql:8.4
-DBL_TEST_MYSQL_HOST=127.0.0.1 DBL_TEST_MYSQL_PORT=13306 \
-  DBL_TEST_MYSQL_DATABASE=dbltest DBL_TEST_MYSQL_USERNAME=dbltest \
-  DBL_TEST_MYSQL_PASSWORD=dbltest-password DBL_TEST_MYSQL_TLS_MODE=disable \
-  go test ./internal/mysql -run '^TestMySQLIntegration$' -v
-# For a TLS-enabled service with a server certificate matching DBL_TEST_MYSQL_HOST,
-# use these settings instead of the plaintext settings above.
-DBL_TEST_MYSQL_HOST=127.0.0.1 DBL_TEST_MYSQL_PORT=13306 \
-DBL_TEST_MYSQL_DATABASE=dbltest DBL_TEST_MYSQL_USERNAME=dbltest \
-DBL_TEST_MYSQL_PASSWORD=dbltest-password DBL_TEST_MYSQL_TLS_MODE=verify-full \
-DBL_TEST_MYSQL_CA=/path/to/test-ca.pem \
-  go test ./internal/mysql -run '^TestMySQLIntegration$' -v
-docker stop dbl-test-mysql
-```
-
-Redis 集成用例需要一个可写的专用 Redis DB；只创建并删除本测试生成的唯一 `dbl_it_*` 键：
-
-```sh
-DBL_TEST_REDIS_ADDR=127.0.0.1:6379 DBL_TEST_REDIS_TLS_MODE=disable \
-  go test ./internal/redis -run '^TestRedisIntegration$' -v
-```
-
-ACL/TLS 环境可另外设置 `DBL_TEST_REDIS_USERNAME`、`DBL_TEST_REDIS_PASSWORD`、`DBL_TEST_REDIS_DB` 和 `DBL_TEST_REDIS_TLS_MODE`（支持 `verify-full`、`verify-ca`、`require`、`disable`）。
-
-## Redis 与 MongoDB 集成验证
-
-请连接隔离的本机服务。Redis 用例只创建并删除唯一 `dbl_it_*` 键；MongoDB 用例只创建并删除唯一数据库。MongoDB 用例还检查索引元数据、查询/聚合/替换和 `$out` 写入阶段拦截。
-
-```sh
-DBL_TEST_REDIS_ADDR=127.0.0.1:6379 DBL_TEST_REDIS_TLS_MODE=disable \
-  go test ./internal/redis -run '^TestRedisIntegration$' -v
-DBL_TEST_MONGODB_ADDR=127.0.0.1:27017 DBL_TEST_MONGODB_TLS_MODE=disable \
-  go test ./internal/mongodb -run '^TestMongoDBIntegration$' -v
-# Strict TLS with a private CA; server certificate must include the endpoint hostname/IP SAN.
-DBL_TEST_MONGODB_ADDR=127.0.0.1:27017 DBL_TEST_MONGODB_TLS_MODE=verify-full \
-DBL_TEST_MONGODB_CA=/path/to/test-ca.pem \
-  go test ./internal/mongodb -run '^TestMongoDBIntegration$' -v
-# Hostname mismatch test: point localhost to a TLS server whose certificate lacks a localhost SAN.
-DBL_TEST_MONGODB_TLS_MISMATCH_ADDR=localhost:27017 DBL_TEST_MONGODB_CA=/path/to/test-ca.pem \
-  go test ./internal/mongodb -run '^TestMongoDBTLSHostnameMismatchIntegration$' -v
-```
-
-2026-10-26 本机验证 Redis 8.10.2 的明文路径和 ACL + 自建测试 CA `verify-full` TLS 路径；MongoDB 8.0.34 验证明文路径及 SCRAM 凭据 + `tlsMode=require` 加密路径。MongoDB `require` 不验证服务端证书。Profile `TLSCAPath` + `verify-full` 已用测试 CA 验证证书链和 hostname，hostname 不匹配时拒绝。etcd revision compaction 错误路径已集成验证；目标版本、目标生产证书与桌面 UI 仍待验收。
-
-## etcd 集成验证
-
-使用隔离的 etcd 服务运行集成用例；用例会创建并清理唯一前缀下的 key，并覆盖分页、租约 TTL 读取与到期删除、watch 取消与 revision compaction 错误、删除边界和只读保护。认证/TLS/mTLS 服务可设置 CA、客户端证书/私钥和用户名/密码：
-
-```sh
-DBL_TEST_ETCD_ENDPOINT=http://127.0.0.1:2379 \
-  go test ./internal/etcd -run '^TestEtcdIntegration$' -v
-DBL_TEST_ETCD_ENDPOINT=https://127.0.0.1:2379 \
-DBL_TEST_ETCD_CA=/path/to/ca.pem \
-DBL_TEST_ETCD_CLIENT_CERT=/path/to/client.pem DBL_TEST_ETCD_CLIENT_KEY=/path/to/client-key.pem \
-DBL_TEST_ETCD_USERNAME=dbltest DBL_TEST_ETCD_PASSWORD=secret \
-  go test ./internal/etcd -run '^TestEtcdIntegration$' -v
-```
-
-2026-10-26 已使用 server v3.7.3 和项目 client v3.6.16 通过明文及用户名/密码 + 私有 CA verify-full + 客户端证书 mTLS 单节点验证；revision compaction 错误路径已集成验证；目标部署版本与 UI 仍需验收。
-
-2026-10-26 在 Apple M1 / macOS 15.8.1 / Go 1.27.3 上复测：10,000 行 × 128 字节 SQLite 扫描，批次 128/512/1,024 分别约 2.980/3.001/2.985 ms、429.47/426.56/428.82 MB/s、2.09/2.11/2.11 MB 分配；10,000 行索引排序约 1.36 ms，混合整数/浮点排序约 1.51 ms，均约 82 KB、3 次分配。只测后端扫描/索引排序，不含 UI 绘制；命令和完整数据见 [阶段 0 ADR](docs/decisions/0001-stage-0.md)。macOS 原生窗口、菜单与文件面板已通过可见 app bundle 实际启动；桌面 SQL 查询、结果网格和 CSV 导出已端到端操作验证。中文输入法和屏幕阅读器仍待验收。
-
-## 第三方许可
-
-DBL 自有代码采用 MIT License，许可文本见根目录 `LICENSE`；应用资源中的 `resources/LICENSE` 会随安装包分发。`THIRD_PARTY_NOTICES.md` 列出六个发布目标的 Go 运行依赖及版本；完整上游许可/通知文件随包放在 `resources/THIRD_PARTY_LICENSES/`。MySQL 驱动 MPL-2.0 源码也一并保留，各第三方组件仍按其各自许可证分发；该清单不代表完成法律审阅。
-
-## 当前阶段限制
-
-- SQLite 驱动固定为 `modernc.org/sqlite v1.61.0`，并按驱动 go.mod 固定 `modernc.org/libc v1.79.0`；纯 Go，无 CGO。依赖校验和已写入 `go.sum`，构建与测试可在当前模块缓存下以 `GOPROXY=off` 重现。
-- PostgreSQL 驱动固定为 `github.com/jackc/pgx/v5 v5.11.0`，MySQL 驱动固定为 `github.com/go-sql-driver/mysql v1.10.1`；两者通过 `database/sql` adapter 接入。MySQL 驱动使用 MPL-2.0，其 v1.10.1 许可和源文件已随 MyGo 原生资源打包。SQLite 使用 `modernc.org/sqlite v1.61.0` 纯 Go 驱动；已接受其相对原生驱动的性能折损，并以本机代表性扫描基准作基线。
-- 首发平台候选为 macOS 12+ arm64；MyGo 文档的打包默认最低 macOS 版本为 12.0。Linux x64/arm64（GTK 3）和 Windows 10/11 x64/arm64 为待验证目标，均不是已验证的支持承诺。
-- 当前开发机为 macOS 15.8.1 arm64、Go 1.27.3。MySQL adapter 加入后的 `GOPROXY=off go test ./...`、`go test -race ./...`、`go vet ./...`、`CGO_ENABLED=0 go build ./...` 及 darwin/amd64、linux/amd64、linux/arm64、windows/amd64、windows/arm64 纯 Go 交叉构建均通过。PostgreSQL 17 与 MySQL 8.4 的一次性本机服务器集成用例及 `verify-full` TLS 握手均已通过。可见 app bundle 已检查 MySQL profile 的 TLS 选择和风险提示；真正连接/保存 profile 的桌面验收仍待做。中文输入法及屏幕阅读器验收未完成。
-- 查询历史默认只保留本次运行的最近 100 条；在历史面板开启本机保存后，最近 100 条会写入私有设置文件，关闭时清除磁盘副本。
-- 不返回结果集的 SQL 会显示执行完成，但尚未展示 DML 影响行数。
-- `tmp/` 是本地工作目录，不属于应用交付内容。
-
-AI provider 设置支持“获取模型”和搜索选择，也可手动输入名称。模型列表按 provider 与地址缓存在本次运行中；助手顶部可切换已获取的模型，选择会保存到当前 provider。获取失败不会覆盖已选模型。
+DBL 使用 [MIT License](LICENSE)。第三方组件遵循各自许可，见 [第三方通知](THIRD_PARTY_NOTICES.md)。完整许可文本及相关源码随安装包分发。

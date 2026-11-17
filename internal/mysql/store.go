@@ -266,6 +266,39 @@ func (store *Store) StartQuery(ctx context.Context, statement string) (*sqlstrea
 	return sqlstream.Open(ctx, store.db, statement)
 }
 
+func (store *Store) ExecStatement(ctx context.Context, statement string) (int64, error) {
+	if store == nil || store.db == nil {
+		return 0, errors.New("MySQL connection is closed")
+	}
+	var executor interface {
+		ExecContext(context.Context, string, ...any) (sql.Result, error)
+	} = store.db
+	var tx *sql.Tx
+	if store.readOnly {
+		var err error
+		tx, err = store.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+		if err != nil {
+			return 0, redactError("start read-only MySQL statement", err, store.password())
+		}
+		defer tx.Rollback()
+		executor = tx
+	}
+	result, err := executor.ExecContext(ctx, statement)
+	if err != nil {
+		return 0, redactError("execute MySQL statement", err, store.password())
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, redactError("read MySQL affected row count", err, store.password())
+	}
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return 0, redactError("finish read-only MySQL statement", err, store.password())
+		}
+	}
+	return count, nil
+}
+
 // StartQueryWithCancellation pins the query to a known MySQL session and
 // registers a server-side KILL QUERY action before starting it. Closing a
 // client socket alone may not interrupt a long aggregate until MySQL tries to

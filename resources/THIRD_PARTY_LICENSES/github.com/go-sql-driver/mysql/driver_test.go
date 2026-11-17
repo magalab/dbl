@@ -124,7 +124,7 @@ func runTestsWithMultiStatement(t *testing.T, dsn string, tests ...func(dbt *DBT
 
 	dsn += "&multiStatements=true"
 	var db *sql.DB
-	if _, err := ParseDSN(dsn); err != errInvalidDSNUnsafeCollation {
+	if _, err := ParseDSN(dsn); err != errUnsafeCharset {
 		db, err = sql.Open(driverNameTest, dsn)
 		if err != nil {
 			t.Fatalf("error connecting: %s", err.Error())
@@ -157,7 +157,7 @@ func runTests(t *testing.T, dsn string, tests ...func(dbt *DBTest)) {
 
 	dsn2 := dsn + "&interpolateParams=true"
 	var db2 *sql.DB
-	if _, err := ParseDSN(dsn2); err != errInvalidDSNUnsafeCollation {
+	if _, err := ParseDSN(dsn2); err != errUnsafeCharset {
 		db2, err = sql.Open(driverNameTest, dsn2)
 		if err != nil {
 			t.Fatalf("connecting %q: %s", dsn2, err)
@@ -238,7 +238,7 @@ func runTestsParallel(t *testing.T, dsn string, tests ...func(dbt *DBTest, table
 		})
 
 		dsn2 := dsn + "&interpolateParams=true"
-		if _, err := ParseDSN(dsn2); err == errInvalidDSNUnsafeCollation {
+		if _, err := ParseDSN(dsn2); err == errUnsafeCharset {
 			t.Run("interpolateParams", func(t *testing.T) {
 				t.Parallel()
 
@@ -3114,6 +3114,10 @@ func TestRowsColumnTypes(t *testing.T) {
 		{"decimal2null", "DECIMAL(8,4)", "DECIMAL", scanTypeNullString, true, 8, 4, [3]string{"0", "NULL", "1234.123456"}, [3]any{ns("0.0000"), nsNULL, ns("1234.1235")}},
 		{"decimal3", "DECIMAL(5,0) NOT NULL", "DECIMAL", scanTypeString, false, 5, 0, [3]string{"0", "13.37", "-12345.123456"}, [3]any{"0", "13", "-12345"}},
 		{"decimal3null", "DECIMAL(5,0)", "DECIMAL", scanTypeNullString, true, 5, 0, [3]string{"0", "NULL", "-12345.123456"}, [3]any{ns0, nsNULL, ns("-12345")}},
+		{"decimalunsigned", "DECIMAL(10,6) UNSIGNED NOT NULL", "DECIMAL", scanTypeString, false, 10, 6, [3]string{"0", "13.37", "1234.123456"}, [3]any{"0.000000", "13.370000", "1234.123456"}},
+		{"decimalunsignednull", "DECIMAL(10,6) UNSIGNED", "DECIMAL", scanTypeNullString, true, 10, 6, [3]string{"0", "NULL", "1234.123456"}, [3]any{ns("0.000000"), nsNULL, ns("1234.123456")}},
+		{"decimalunsignedzero", "DECIMAL(5,0) UNSIGNED NOT NULL", "DECIMAL", scanTypeString, false, 5, 0, [3]string{"0", "13.37", "12345.123456"}, [3]any{"0", "13", "12345"}},
+		{"decimalunsignedzeronull", "DECIMAL(5,0) UNSIGNED", "DECIMAL", scanTypeNullString, true, 5, 0, [3]string{"0", "NULL", "12345.123456"}, [3]any{ns0, nsNULL, ns("12345")}},
 		{"char25null", "CHAR(25)", "CHAR", scanTypeNullString, true, 0, 0, [3]string{"0", "NULL", "'Test'"}, [3]any{ns0, nsNULL, nsTest}},
 		{"varchar42", "VARCHAR(42) NOT NULL", "VARCHAR", scanTypeString, false, 0, 0, [3]string{"0", "'Test'", "42"}, [3]any{"0", "Test", "42"}},
 		{"binary4null", "BINARY(4)", "BINARY", scanTypeBytes, true, 0, 0, [3]string{"0", "NULL", "'Test'"}, [3]any{b0pad4, bNULL, bTest}},
@@ -3534,7 +3538,7 @@ func TestConnectionAttributes(t *testing.T) {
 	dsn += "&connectionAttributes=" + url.QueryEscape(strings.Join(customAttrStrs, ","))
 
 	var db *sql.DB
-	if _, err := ParseDSN(dsn); err != errInvalidDSNUnsafeCollation {
+	if _, err := ParseDSN(dsn); err != errUnsafeCharset {
 		db, err = sql.Open(driverNameTest, dsn)
 		if err != nil {
 			t.Fatalf("error connecting: %s", err.Error())
@@ -3579,7 +3583,7 @@ func TestErrorInMultiResult(t *testing.T) {
 	}
 	// https://github.com/go-sql-driver/mysql/issues/1361
 	var db *sql.DB
-	if _, err := ParseDSN(dsn); err != errInvalidDSNUnsafeCollation {
+	if _, err := ParseDSN(dsn); err != errUnsafeCharset {
 		db, err = sql.Open("mysql", dsn)
 		if err != nil {
 			t.Fatalf("error connecting: %s", err.Error())

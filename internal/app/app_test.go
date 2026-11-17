@@ -619,7 +619,7 @@ func TestAIWorkspaceShowsRegenerateActionForPriorResponse(t *testing.T) {
 
 func TestAboutPanelOptionsExposeVersionAndMyGoRuntime(t *testing.T) {
 	packaged := aboutPanelOptions("0.1.0")
-	if packaged.ApplicationName != "DBL · 数据工作台" || packaged.ApplicationVersion != "0.1.0" || !strings.Contains(packaged.Credits, "MyGo 0.6.2") {
+	if packaged.ApplicationName != "DBL · 数据工作台" || packaged.ApplicationVersion != "0.1.0" || !strings.Contains(packaged.Credits, "MyGo "+mygo.Version) {
 		t.Fatalf("packaged about panel is missing app/runtime versions: %#v", packaged)
 	}
 	development := aboutPanelOptions("devel")

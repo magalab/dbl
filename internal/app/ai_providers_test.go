@@ -72,6 +72,9 @@ func TestModelSwitchPersistsOnlySelectedProvider(t *testing.T) {
 	a := preferences.AIProvider{ID: "a", Name: "A", AISettings: app.aiSettings}
 	b := preferences.AIProvider{ID: "b", Name: "B", AISettings: app.aiSettings}
 	app.aiProviders = []preferences.AIProvider{a, b}
+	if !app.persistAIProviders(app.aiProviders, a.ID) {
+		t.Fatal("could not persist initial default provider")
+	}
 	app.loadAIProvider(a)
 	app.switchAIModel("chosen-model")
 	if app.aiModel != "chosen-model" || store.Settings().AI.Model != "chosen-model" || app.aiProviders[1].Model != b.Model {
@@ -88,6 +91,7 @@ func TestBeginAIProviderAddKeepsSavedProviderVisible(t *testing.T) {
 	app := newAIRequestWorkbench()
 	p := preferences.AIProvider{ID: "saved", Name: "Saved account", AISettings: app.aiSettings}
 	app.aiProviders = []preferences.AIProvider{p}
+	app.aiDefaultProviderID = p.ID
 	app.loadAIProvider(p)
 	app.beginAIProviderAdd()
 	if app.aiProviderID != p.ID || app.aiProviderNew != true || len(app.aiProviders) != 1 || app.aiProviders[0] != p {
