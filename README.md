@@ -25,7 +25,13 @@ DBL 提供 SQL 查询、多标签工作区、数据浏览与编辑，以及可�
 
 ### macOS
 
-下载 arm64 的 DMG，将 `DBL.app` 拖入“应用程序”。应用使用 ad-hoc 签名，未经 Apple 公证，首次打开可能需要在系统设置中允许。
+下载 arm64 的 DMG，将 `DBL.app` 拖入“应用程序”。应用使用 ad-hoc 签名，未经 Apple 公证，首次打开时先到“系统设置 → 隐私与安全性”允许打开 DBL。如果仍提示应用处于隔离状态，可移除 DBL.app 的下载隔离属性：
+
+```sh
+xattr -dr com.apple.quarantine /Applications/DBL.app
+```
+
+此命令只移除 DBL.app 的下载隔离标记；Homebrew 安装后也会显示这条提示。
 
 也可通过 Homebrew 安装：
 
