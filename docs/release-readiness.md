@@ -1,17 +1,17 @@
 # 发布准备与支持矩阵
 
-状态：准备 0.1.1 首次公开试发；下列未完成验收项继续保留，不因生成或发布安装包而视为通过。此文件记录候选范围及验收证据，不构成完整平台支持承诺。
+状态：0.1.1 首次公开试发已发布；下列未完成验收项继续保留，不因生成或发布安装包而视为通过。此文件记录候选范围及验收证据，不构成完整平台支持承诺。
 
 ## 候选矩阵
 
-当前发布范围仅为 macOS 15+ arm64 与 Windows amd64。表中旧版跨架构构建记录仅作为历史证据；两个目标均需对最新安装包重新验收。
+当前发布范围仅为 macOS 15+ arm64 与 Windows amd64。表中区分自动化检查、安装包静态验证和仍待进行的桌面验收。
 
 | 平台 | 候选版本 | 架构 | 状态 |
 |---|---|---|---|
-| macOS | 15+ | arm64 | 2026-10-29 基于提交 `07d5c27` 使用 MyGo 0.6.2 重建 universal `DBL.app`（ad-hoc 签名，跳过 DMG），其中包含 arm64；bundle ID `com.magalab.dbl`、版本 `0.1.0`、当时最低系统版本 12.0（当前配置已改为 15.0，需重新打包验收），`lipo` 架构和 `codesign --verify --deep --strict` 均通过。源 `resources/` 的 108 个文件全部与包内哈希一致，包内另有 `AppIcon.icns` 和 `Assets.car`。未启动该 bundle，连接弹窗、设置、快捷键、COUNT 取消与连接关闭行为仍缺最新包的可见交互验收；此前旧测试窗口的 SQLite、PostgreSQL、MySQL 基础连接/查询 smoke 不能替代本次验收。自定义 CA 表单、AI、生产环境提示尚无可见验收；数据库集成已覆盖 PostgreSQL/MySQL 私有 CA + verify-full、MongoDB/Redis/etcd 单机及认证/TLS；ad-hoc 签名包下载后的首次打开、干净安装/卸载未验证 |
-| Windows | Windows 10/11 | amd64 | 2026-10-29 基于当前工作树，使用 MyGo 0.6.2 与 NSIS 3.13 从 macOS arm64 生成 amd64/arm64 的 PE32+ 主程序及 NSIS Setup 安装器；`file` 确认主程序架构分别为 x86-64/ARM64，安装器识别为 NSIS；两个架构的应用目录均包含 LICENSE 和第三方通知。目标系统启动、安装卸载、Windows ACL/凭据库及 Authenticode 签名仍待验证；本次构建未签名 |
+| macOS | 15+ | arm64 | 2026-11-17，标签 `v0.1.1`（`3588821`）的 GitHub Actions 编译、vet、单测、DMG 打包及签名/架构检查通过。本地下载 DMG 后核对 SHA-256、镜像完整性、`Signature=adhoc`、arm64、`LSMinimumSystemVersion=15.0`、版本 0.1.1 和 bundle ID；确认包内含 LICENSE、第三方通知和 MySQL v1.10.2 MPL 源码归档。桌面交互、首次打开、安装卸载及辅助功能验收仍待完成 |
+| Windows | Windows 10/11 | amd64 | 2026-11-17，标签 `v0.1.1`（`3588821`）的 Windows runner 编译、vet、单测和 NSIS Setup 打包通过，包含 current-user-only protected ACL 测试；本地核对安装器 SHA-256 与 NSIS 文件类型。v0.1.0 因通用权限映射导致旧 ACL 断言失败未发布，v0.1.1 使用具体文件权限后通过。Windows 10/11 桌面启动、安装卸载和凭据 UI 生命周期仍待实机验收；安装器未签名 |
 
-SQLite 使用 `modernc.org/sqlite v1.61.0`，保持 `CGO_ENABLED=0`。MyGo 固定 `v0.6.2`。MongoDB、etcd 和 AI 的版本/协议见 `docs/decisions/`。
+SQLite 保持 `CGO_ENABLED=0`，依赖版本以 go.mod 为准（本次 SQLite v1.62.0、MyGo v0.9.2）。MongoDB、etcd 和 AI 的版本/协议见 `docs/decisions/`。
 
 ## 构建
 

@@ -27,7 +27,7 @@ DBL 提供 SQL 查询、多标签工作区、数据浏览与编辑，以及可�
 
 下载 arm64 的 DMG，将 `DBL.app` 拖入“应用程序”。应用使用 ad-hoc 签名，未经 Apple 公证，首次打开可能需要在系统设置中允许。
 
-首个正式版本发布且 Homebrew tap 更新后，可使用：
+也可通过 Homebrew 安装：
 
 ```sh
 brew install --cask magalab/tap/dbl
