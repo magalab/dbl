@@ -4,6 +4,10 @@ package privatefs
 
 import "golang.org/x/sys/windows"
 
+// Use concrete file rights rather than GENERIC_ALL so Windows does not split
+// a directory's grant into separate effective and inherit-only ACEs.
+const fileAllAccess = windows.STANDARD_RIGHTS_REQUIRED | windows.SYNCHRONIZE | 0x1ff
+
 // Restrict replaces inherited permissions with a protected DACL that grants
 // full access only to the current user. Directory rights inherit to children.
 func Restrict(path string, directory bool) error {
@@ -21,7 +25,7 @@ func Restrict(path string, directory bool) error {
 		inheritance = windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE
 	}
 	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
-		AccessPermissions: windows.ACCESS_MASK(windows.GENERIC_ALL),
+		AccessPermissions: windows.ACCESS_MASK(fileAllAccess),
 		AccessMode:        windows.GRANT_ACCESS,
 		Inheritance:       inheritance,
 		Trustee: windows.TRUSTEE{

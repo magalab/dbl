@@ -52,8 +52,8 @@ func assertPrivateACL(t *testing.T, path string, directory bool) {
 	if err := windows.GetAce(dacl, 0, &ace); err != nil {
 		t.Fatal(err)
 	}
-	if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Mask != windows.ACCESS_MASK(windows.GENERIC_ALL) {
-		t.Fatalf("ACE type/mask = %d/%#x, want allowed GENERIC_ALL", ace.Header.AceType, ace.Mask)
+	if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Mask != windows.ACCESS_MASK(fileAllAccess) {
+		t.Fatalf("ACE type/mask = %d/%#x, want allowed FILE_ALL_ACCESS", ace.Header.AceType, ace.Mask)
 	}
 	user, err := currentUserSID()
 	if err != nil {

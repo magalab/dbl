@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.1.0 - 2026-11-17
+## 0.1.1 - 2026-11-17
+
+- Use concrete Windows file permissions for current-user-only ACLs.
+- Retry initial distribution after the v0.1.0 Windows ACL check failed.
+
+## 0.1.0 - Build attempt (not released)
 
 - Add native SQL workspaces for SQLite, PostgreSQL, and MySQL.
 - Add Redis key browsing, MongoDB document browsing, and etcd prefix/revision workflows.
