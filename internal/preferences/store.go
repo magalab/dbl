@@ -28,24 +28,25 @@ const MaxQueryHistoryEntries = 100
 const MaxQueryHistorySQLBytes = 64 << 10
 
 type Settings struct {
-	Version             int                 `json:"version"`
-	Appearance          string              `json:"appearance,omitempty"`
-	Language            string              `json:"language,omitempty"`
-	Layout              *Layout             `json:"layout,omitempty"`
-	LastSQLitePath      string              `json:"last_sqlite_path,omitempty"`
-	RecentSQLitePaths   []string            `json:"recent_sqlite_paths,omitempty"`
-	RecentConnectionIDs []string            `json:"recent_connection_ids,omitempty"`
-	SQLiteProfiles      []SQLiteProfile     `json:"sqlite_profiles,omitempty"`
-	ConnectionProfiles  []ConnectionProfile `json:"connection_profiles,omitempty"`
-	QueryHistoryEnabled bool                `json:"query_history_enabled,omitempty"`
-	QueryHistory        []QueryHistoryEntry `json:"query_history,omitempty"`
-	QueryDraftsEnabled  bool                `json:"query_drafts_enabled,omitempty"`
-	QueryDrafts         []QueryDraft        `json:"query_drafts,omitempty"`
-	ActiveQueryDraft    int                 `json:"active_query_draft,omitempty"`
-	Interface           InterfaceSettings   `json:"interface,omitempty"`
-	AIProviders         []AIProvider        `json:"ai_providers,omitempty"`
-	ActiveAIProviderID  string              `json:"active_ai_provider_id,omitempty"`
-	AI                  AISettings          `json:"ai,omitempty"`
+	Version                  int                 `json:"version"`
+	Appearance               string              `json:"appearance,omitempty"`
+	Language                 string              `json:"language,omitempty"`
+	Layout                   *Layout             `json:"layout,omitempty"`
+	LastSQLitePath           string              `json:"last_sqlite_path,omitempty"`
+	RecentSQLitePaths        []string            `json:"recent_sqlite_paths,omitempty"`
+	RecentConnectionIDs      []string            `json:"recent_connection_ids,omitempty"`
+	SQLiteProfiles           []SQLiteProfile     `json:"sqlite_profiles,omitempty"`
+	ConnectionProfiles       []ConnectionProfile `json:"connection_profiles,omitempty"`
+	QueryHistoryEnabled      bool                `json:"query_history_enabled,omitempty"`
+	QueryHistory             []QueryHistoryEntry `json:"query_history,omitempty"`
+	QueryDraftsEnabled       bool                `json:"query_drafts_enabled,omitempty"`
+	QueryDrafts              []QueryDraft        `json:"query_drafts,omitempty"`
+	ActiveQueryDraft         int                 `json:"active_query_draft,omitempty"`
+	UpdateCheckIntervalHours int                 `json:"update_check_interval_hours,omitempty"`
+	Interface                InterfaceSettings   `json:"interface,omitempty"`
+	AIProviders              []AIProvider        `json:"ai_providers,omitempty"`
+	ActiveAIProviderID       string              `json:"active_ai_provider_id,omitempty"`
+	AI                       AISettings          `json:"ai,omitempty"`
 }
 
 // QueryHistoryEntry is an explicitly opted-in local record of a SQL execution.
@@ -89,13 +90,14 @@ type SQLiteProfile struct {
 
 // Store serializes updates and persists only non-secret preferences.
 type Store struct {
-	mu                   sync.Mutex
-	dir                  string
-	settings             Settings
-	revision             uint64
-	queryHistoryRevision uint64
-	queryDraftsRevision  uint64
-	interfaceRevision    uint64
+	mu                     sync.Mutex
+	dir                    string
+	settings               Settings
+	revision               uint64
+	queryHistoryRevision   uint64
+	queryDraftsRevision    uint64
+	interfaceRevision      uint64
+	updateIntervalRevision uint64
 }
 
 func Open() (*Store, error) {
@@ -112,7 +114,7 @@ func OpenAt(dir string) (*Store, error) {
 	if strings.TrimSpace(dir) == "" {
 		return nil, errors.New("preferences directory is empty")
 	}
-	store := &Store{dir: dir, settings: Settings{Version: 1, Interface: InterfaceSettings{StartupMode: "normal"}}}
+	store := &Store{dir: dir, settings: Settings{Version: 1, Interface: InterfaceSettings{StartupMode: "normal"}, UpdateCheckIntervalHours: 24}}
 	dirInfo, err := os.Stat(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return store, nil
@@ -222,6 +224,12 @@ func OpenAt(dir string) (*Store, error) {
 	}
 	settings = migrateAIProviders(settings)
 	settings = normalizeWorkspaceSettings(settings)
+	if settings.UpdateCheckIntervalHours == 0 {
+		settings.UpdateCheckIntervalHours = 24
+	}
+	if settings.UpdateCheckIntervalHours < 1 || settings.UpdateCheckIntervalHours > 168 {
+		settings.UpdateCheckIntervalHours = 24
+	}
 	store.settings = settings
 	if legacyJSON {
 		if err := writeSettings(dir, settings); err != nil {
@@ -424,6 +432,26 @@ func (store *Store) Settings() Settings {
 	settings.QueryDrafts = append([]QueryDraft(nil), settings.QueryDrafts...)
 	settings.AIProviders = append([]AIProvider(nil), settings.AIProviders...)
 	return settings
+}
+
+// SetUpdateCheckInterval persists the update check interval without replacing
+// unrelated settings written by concurrent preference operations.
+func (store *Store) SetUpdateCheckInterval(hours int, revision uint64) error {
+	if hours < 1 || hours > 168 {
+		return errors.New("update check interval must be between 1 and 168 hours")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if revision <= store.updateIntervalRevision {
+		return nil
+	}
+	settings := store.settings
+	settings.UpdateCheckIntervalHours = hours
+	if err := writeSettings(store.dir, settings); err != nil {
+		return err
+	}
+	store.settings, store.updateIntervalRevision = settings, revision
+	return nil
 }
 
 func normalizeQueryHistory(entries []QueryHistoryEntry) []QueryHistoryEntry {

@@ -3,6 +3,10 @@
   "identifier": "com.magalab.dbl",
   "version": "0.1.1",
   "copyright": "Copyright 2026 Magalab",
+  "updates": {
+    "publicKey": "OHb/qBTKffuMCYXsYqyZXt0MIdX+0YGVJIOPpbGJEkk=",
+    "github": "magalab/dbl"
+  },
   "icon": "resources/icon.png",
   "resourcesExclude": ["icon.png", "icon-macos.png"],
   "main": ".",

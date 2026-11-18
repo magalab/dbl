@@ -354,6 +354,7 @@ func (app *workbench) toolbar(c *ui.Context) {
 			})
 		}
 		ui.Box(c).Grow(1)
+		app.updateToolbarButton(c)
 		aiLabel := "打开 AI 助手 · ⌘/Ctrl+Shift+B"
 		if app.showAI {
 			aiLabel = "关闭 AI 助手 · ⌘/Ctrl+Shift+B"
@@ -418,6 +419,7 @@ func (app *workbench) setLanguage(next string) {
 				return
 			}
 			app.language = next
+			mygo.App.SetLocale(mygoLanguageTag(next))
 			mygo.App.SetMenu(mygo.NewMenu(appMenuItems(app, runtime.GOOS)))
 			if app.settingsWindow != nil {
 				app.settingsWindow.SetTitle(app.localized("设置"))

@@ -59,10 +59,33 @@ jobs:
         run: |
           version=$(go list -m -f '{{.Version}}' github.com/egoist/mygo)
           go install "github.com/egoist/mygo/cmd/mygo@$version"
+      - name: Check update signing key
+        env:
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: test -n "$MYGO_UPDATER_PRIVATE_KEY"
       - name: Build native packages
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET_PLATFORM: ${{ matrix.platform }}
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
         run: mygo build -platform "$TARGET_PLATFORM" -sign - -skip-notarize
+      - name: Check signed update manifest
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          target = os.environ['TARGET_PLATFORM'].replace('/', '-')
+          path = next(Path('build').rglob(f'update-{target}.json'), None)
+          if path is None:
+              raise SystemExit(f'Missing update manifest for {target}')
+          manifest = json.loads(path.read_text())
+          version = json.loads(Path('mygo.json').read_text())['version']
+          if manifest.get('version') != version or not manifest.get('url') or not manifest.get('signature'):
+              raise SystemExit(f'Invalid signed update manifest: {path}')
+          PY
       - name: Verify macOS ad-hoc signature and arm64 binary
         if: runner.os == 'macOS'
         run: |
@@ -80,6 +103,8 @@ jobs:
           target.mkdir()
           for source in Path('build').rglob('*'):
               if source.is_file() and (source.name.endswith(('.dmg', '.zip')) or
+                                       source.name.endswith(('.tar.gz', '.delta')) or
+                                       source.name.startswith('update-') and source.suffix == '.json' or
                                        ('-setup-' in source.name and source.suffix == '.exe')):
                   destination = target / source.name
                   if destination.exists():

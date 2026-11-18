@@ -148,6 +148,8 @@ func (app *workbench) settingsView(c *ui.Context) {
 					ui.Text(c, app.localized("输入停止约 750 毫秒后保存，退出前补存。最多 16 个标签，单个 SQL 上限 256 KiB；超限草稿不保存。关闭标签会移除其草稿。")).TextColor(theme.TextMuted)
 				})
 
+				app.updateSettingsUI(c)
+
 				ui.Column(c).Padding(14).Gap(8).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
 					ui.Text(c, app.localized("查询历史")).Bold().Role(ui.RoleHeading).Level(2)
 					history := ui.Checkbox(c, &app.queryHistoryEnabled, app.localized("将最近查询 SQL 保存在本机"))

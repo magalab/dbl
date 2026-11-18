@@ -6,6 +6,17 @@ import (
 )
 
 var englishUI = map[string]string{
+	"应用更新":   "Application updates",
+	"检查更新":   "Check for updates",
+	"自动检查更新": "Check for updates automatically",
+	"开启后按设定间隔检查更新；发现新版本时显示更新窗口。默认关闭。": "When enabled, the app checks at the selected interval and opens the updater when an update is available. Off by default.",
+	"检查间隔": "Check interval",
+	"更改后下次启动生效。手动检查可随时进行。": "Changes take effect on next launch. You can check manually at any time.",
+	"6 小时": "6 hours", "12 小时": "12 hours", "24 小时": "24 hours", "48 小时": "48 hours", "7 天": "7 days",
+	"上次检查：":      "Last checked: ",
+	"保存更新检查间隔失败": "Failed to save update check interval",
+	"更新检查间隔已保存。": "Update check interval saved.",
+	"应用内更新仅适用于安装在当前用户可写目录的正式版本。":     "In-app updates require a packaged app installed in a location writable by the current user.",
 	"工作区已达上限，请先关闭一个标签后再打开此连接的查询工作区。": "Workspace limit reached. Close a tab before opening a query workspace for this connection.",
 	"DBL 数据工作台 · Aa 0123":        "DBL Workbench · Aa 0123",
 	"SELECT 名称, id FROM users;":  "SELECT name, id FROM users;",
@@ -527,6 +538,13 @@ func (app *workbench) localized(text string) string {
 		}
 	}
 	return text
+}
+
+func mygoLanguageTag(language string) string {
+	if language == "en" {
+		return "en"
+	}
+	return "zh-Hans"
 }
 
 func (app *workbench) localizedDynamic(text string) string {

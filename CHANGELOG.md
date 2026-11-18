@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add signed in-app update checks, download progress, installation, and restart for macOS arm64 and Windows amd64.
+
 ## 0.1.1 - 2026-11-17
 
 - Use concrete Windows file permissions for current-user-only ACLs.

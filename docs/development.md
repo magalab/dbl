@@ -8,9 +8,10 @@ Go 版本和依赖版本以 [go.mod](../go.mod) 为准。SQLite 保持纯 Go 构
 make run
 make build
 make package-macos
+make package-windows
 ```
 
-`make build` 输出 `build/dbl`。`make package-macos` 使用与 go.mod 一致的 MyGo CLI，生成 macOS arm64 的 ad-hoc 签名安装包。Windows amd64 安装包由 [GitHub Actions](github-actions.md) 构建。
+`make build` 输出 `build/dbl`。`make package-macos` 使用与 go.mod 一致的 MyGo CLI，生成 macOS arm64 的 ad-hoc 签名安装包。`make package-windows` 需在 Windows amd64 主机运行，生成 `build/windows-amd64/` 下的应用和 NSIS 安装器；MyGo 会准备 NSIS 构建依赖。正式 Windows 发布仍由 [GitHub Actions](github-actions.md) 构建和上传。
 
 ## 常规检查与集成验证
 

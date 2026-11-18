@@ -83,6 +83,33 @@ func TestWorkspacePreferencesMergeUnrelatedOutOfOrderUpdates(t *testing.T) {
 	}
 }
 
+func TestUpdateCheckIntervalDefaultsValidatesAndPersists(t *testing.T) {
+	dir := t.TempDir()
+	store, err := OpenAt(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Settings().UpdateCheckIntervalHours; got != 24 {
+		t.Fatalf("default update interval = %d, want 24", got)
+	}
+	if err := store.SetUpdateCheckInterval(48, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetUpdateCheckInterval(6, 1); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := OpenAt(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.Settings().UpdateCheckIntervalHours; got != 48 {
+		t.Fatalf("persisted update interval = %d, want 48", got)
+	}
+	if err := store.SetUpdateCheckInterval(0, 3); err == nil {
+		t.Fatal("zero update interval accepted")
+	}
+}
+
 func TestWorkspacePreferencesRejectOversizeAndSanitizeLoadedValues(t *testing.T) {
 	store, err := OpenAt(t.TempDir())
 	if err != nil {

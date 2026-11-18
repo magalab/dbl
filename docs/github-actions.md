@@ -42,4 +42,6 @@
 brew install --cask magalab/tap/dbl
 ```
 
-该流程提供安装包构建和下载，不配置应用内自动更新。发布前的实际桌面操作、安装卸载和各平台凭据库验收仍按 release-readiness.md 执行。
+发布工作流同时生成并发布 MyGo 签名更新归档和各平台清单。首次启用前，使用 `mygo keygen` 生成 Ed25519 更新密钥；公钥配置在 `mygo.json` 的 `updates.publicKey`，私钥以 `MYGO_UPDATER_PRIVATE_KEY` 存为 GitHub Actions Secret，并在受控密码管理器中备份。私钥丢失会导致已安装版本无法接受后续更新，泄露则允许攻击者签发应用更新。
+
+发布仍先生成草稿 Release；审核后需发布为最新稳定版，客户端才会发现该版本。MyGo 使用 GitHub 的 latest-release 下载地址读取平台清单，因此只存在草稿、或最新正式 Release 尚未包含清单时，手动检查会收到 404；这是尚未发布可用更新清单的状态。v0.1.1 没有内置更新公钥，用户需要手动安装首个带更新能力的版本。发布前的实际桌面操作、首次升级、安装卸载和各平台凭据库验收仍按 release-readiness.md 执行。

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/updater"
 )
 
 func aboutPanelOptions(version string) mygo.AboutPanelOptions {
@@ -24,23 +25,33 @@ func showAboutPanel() {
 }
 
 func appMenuItems(app *workbench, goos string) []*mygo.MenuItem {
-	menuItems := []*mygo.MenuItem{
-		{Role: mygo.RoleAppMenu, Submenu: []*mygo.MenuItem{
-			{Label: app.localized("关于 DBL"), Click: func(*mygo.MenuItem, *mygo.Window) {
-				showAboutPanel()
-			}},
-			{Label: app.localized("设置…"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) {
-				app.openSettings()
-			}},
-			mygo.Separator(),
-			{Role: mygo.RoleServices},
-			mygo.Separator(),
-			{Role: mygo.RoleHide},
-			{Role: mygo.RoleHideOthers},
-			{Role: mygo.RoleUnhide},
-			mygo.Separator(),
-			{Role: mygo.RoleQuit},
+	appSubmenu := []*mygo.MenuItem{
+		{Label: app.localized("关于 DBL"), Click: func(*mygo.MenuItem, *mygo.Window) {
+			showAboutPanel()
 		}},
+	}
+	if app.updatesEnabled {
+		appSubmenu = append(appSubmenu, updater.MenuItem())
+	}
+	appSubmenu = append(appSubmenu, &mygo.MenuItem{
+		Label:       app.localized("设置…"),
+		Accelerator: "CmdOrCtrl+,",
+		Click: func(*mygo.MenuItem, *mygo.Window) {
+			app.openSettings()
+		},
+	})
+	appSubmenu = append(appSubmenu,
+		mygo.Separator(),
+		&mygo.MenuItem{Role: mygo.RoleServices},
+		mygo.Separator(),
+		&mygo.MenuItem{Role: mygo.RoleHide},
+		&mygo.MenuItem{Role: mygo.RoleHideOthers},
+		&mygo.MenuItem{Role: mygo.RoleUnhide},
+		mygo.Separator(),
+		&mygo.MenuItem{Role: mygo.RoleQuit},
+	)
+	menuItems := []*mygo.MenuItem{
+		{Role: mygo.RoleAppMenu, Submenu: appSubmenu},
 		{Label: app.localized("数据库"), Submenu: []*mygo.MenuItem{
 			{Label: app.localized("新建连接…"), Accelerator: "CmdOrCtrl+N", Click: func(*mygo.MenuItem, *mygo.Window) {
 				app.beginNewConnection()

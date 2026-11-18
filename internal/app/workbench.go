@@ -84,6 +84,9 @@ func (confirmation etcdWriteConfirmation) matches(key, value, leaseID string, ex
 }
 
 type workbench struct {
+	updatesEnabled               bool
+	updateIntervalHours          int
+	updateIntervalSaving         bool
 	queryDraftsEnabled           bool
 	queryDraftsSaving            bool
 	queryDraftSaveTimer          *time.Timer
@@ -546,6 +549,7 @@ func newWorkbench() *workbench {
 	workspace := newQueryWorkspace(1)
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	app := &workbench{
+		updateIntervalHours: 24,
 		lifecycleCtx:        lifecycleCtx,
 		lifecycleCancel:     lifecycleCancel,
 		workspaces:          []*queryWorkspace{workspace},
@@ -606,6 +610,7 @@ func newWorkbench() *workbench {
 	app.connectionProfiles = settings.ConnectionProfiles
 	app.interfaceSettings = settings.Interface
 	app.interfaceDraft = settings.Interface
+	app.updateIntervalHours = settings.UpdateCheckIntervalHours
 	app.queryDraftsEnabled = settings.QueryDraftsEnabled
 	app.restoreQueryDrafts(settings.QueryDrafts, settings.ActiveQueryDraft)
 	app.queryHistoryEnabled = settings.QueryHistoryEnabled
