@@ -39,6 +39,10 @@ type Settings struct {
 	ConnectionProfiles  []ConnectionProfile `json:"connection_profiles,omitempty"`
 	QueryHistoryEnabled bool                `json:"query_history_enabled,omitempty"`
 	QueryHistory        []QueryHistoryEntry `json:"query_history,omitempty"`
+	QueryDraftsEnabled  bool                `json:"query_drafts_enabled,omitempty"`
+	QueryDrafts         []QueryDraft        `json:"query_drafts,omitempty"`
+	ActiveQueryDraft    int                 `json:"active_query_draft,omitempty"`
+	Interface           InterfaceSettings   `json:"interface,omitempty"`
 	AIProviders         []AIProvider        `json:"ai_providers,omitempty"`
 	ActiveAIProviderID  string              `json:"active_ai_provider_id,omitempty"`
 	AI                  AISettings          `json:"ai,omitempty"`
@@ -90,6 +94,8 @@ type Store struct {
 	settings             Settings
 	revision             uint64
 	queryHistoryRevision uint64
+	queryDraftsRevision  uint64
+	interfaceRevision    uint64
 }
 
 func Open() (*Store, error) {
@@ -106,7 +112,7 @@ func OpenAt(dir string) (*Store, error) {
 	if strings.TrimSpace(dir) == "" {
 		return nil, errors.New("preferences directory is empty")
 	}
-	store := &Store{dir: dir, settings: Settings{Version: 1}}
+	store := &Store{dir: dir, settings: Settings{Version: 1, Interface: InterfaceSettings{StartupMode: "normal"}}}
 	dirInfo, err := os.Stat(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return store, nil
@@ -215,6 +221,7 @@ func OpenAt(dir string) (*Store, error) {
 		settings.QueryHistory = normalizeQueryHistory(settings.QueryHistory)
 	}
 	settings = migrateAIProviders(settings)
+	settings = normalizeWorkspaceSettings(settings)
 	store.settings = settings
 	if legacyJSON {
 		if err := writeSettings(dir, settings); err != nil {
@@ -414,6 +421,7 @@ func (store *Store) Settings() Settings {
 	settings.SQLiteProfiles = append([]SQLiteProfile(nil), settings.SQLiteProfiles...)
 	settings.ConnectionProfiles = append([]ConnectionProfile(nil), settings.ConnectionProfiles...)
 	settings.QueryHistory = append([]QueryHistoryEntry(nil), settings.QueryHistory...)
+	settings.QueryDrafts = append([]QueryDraft(nil), settings.QueryDrafts...)
 	settings.AIProviders = append([]AIProvider(nil), settings.AIProviders...)
 	return settings
 }

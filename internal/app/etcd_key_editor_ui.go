@@ -61,6 +61,7 @@ func (app *workbench) etcdCreateKeyModal(c *ui.Context) {
 							app.etcdNewValueEditor.Buffer.SetLanguage(etcdEditorLanguage(app.etcdNewValueFormat))
 						}
 					})
+					app.applyEditorFont(app.etcdNewValueEditor)
 					value := editor.View(c, app.etcdNewValueEditor).FillWidth().Height(360).Label(app.localized("值编辑器"))
 					value.Disabled(app.busy || app.dialogOpen || app.openedReadOnly)
 					ui.Text(c, app.localized("格式仅控制语法高亮，值会按输入内容原样保存。")).TextColor(c.Theme().TextMuted).SingleLine()

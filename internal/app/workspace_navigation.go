@@ -54,6 +54,11 @@ func (app *workbench) activateConnectionWorkspace(connectionID string) {
 		}
 	}
 	if index < 0 {
+		if app.workspaceCount() >= maxWorkspaces {
+			app.detachActiveConnectionContext()
+			app.status = app.localized("工作区已达上限，请先关闭一个标签后再打开此连接的查询工作区。")
+			return
+		}
 		workspace := newQueryWorkspace(app.nextWorkspaceID)
 		app.nextWorkspaceID++
 		workspace.queryConnectionID = connectionID
@@ -145,7 +150,7 @@ func (app *workbench) activateWorkspace(index int) {
 			}
 		}
 		if !app.activateLiveConnectionForWorkspace(targetConnectionID) {
-			if workspace.connectionView {
+			if workspace.connectionView || isSQLQueryWorkspace(workspace) {
 				app.detachActiveConnectionContext()
 				app.activeWorkspace = index
 				app.activeQuery = workspace
@@ -184,6 +189,10 @@ func (app *workbench) activateWorkspace(index int) {
 
 func isSQLQueryWorkspace(workspace *queryWorkspace) bool {
 	return workspace != nil && !workspace.connectionView && !workspace.dataView && !workspace.schemaView && !workspace.redisView
+}
+
+func (app *workbench) canBindActiveQuery(connectionID string) bool {
+	return isSQLQueryWorkspace(app.activeQuery) && (app.activeQuery.queryConnectionID == "" || app.activeQuery.queryConnectionID == connectionID)
 }
 
 func (app *workbench) closeWorkspace(index int) {

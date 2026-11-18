@@ -42,6 +42,10 @@ func (app *workbench) executeSQL() {
 		app.status = app.localized("请先打开数据库文件或连接数据库。")
 		return
 	}
+	if app.activeQuery.queryConnectionID != "" && app.activeQuery.queryConnectionID != app.openedConnectionID {
+		app.status = app.localized("请先连接此 SQL 草稿所属的数据库。")
+		return
+	}
 	app.activeQuery.implicitQuery = false
 	if !app.queryWorkspaceRequested {
 		app.queryWorkspaceRequested = true

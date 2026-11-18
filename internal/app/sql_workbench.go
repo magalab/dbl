@@ -135,7 +135,7 @@ func (app *workbench) openSQLite(access sqlite.AccessMode) {
 			app.openedLabel = path
 			app.openedEnvironment = openedEnvironment
 			app.openedReadOnly = access == sqlite.ReadOnly
-			if app.activeQuery != nil && !app.activeQuery.connectionView && !app.activeQuery.dataView && !app.activeQuery.schemaView {
+			if app.canBindActiveQuery(app.openedConnectionID) {
 				app.activeQuery.queryConnectionID = app.openedConnectionID
 				app.activeQuery.queryNamespace = "main"
 			}
@@ -156,7 +156,11 @@ func (app *workbench) openSQLite(access sqlite.AccessMode) {
 }
 
 func (app *workbench) openPostgreSQL(profile preferences.ConnectionProfile) {
-	app.openPostgreSQLSchema(profile, "")
+	schema := ""
+	if isSQLQueryWorkspace(app.activeQuery) && app.activeQuery.queryConnectionID == profileConnectionID(profile) {
+		schema = app.activeQuery.queryNamespace
+	}
+	app.openPostgreSQLSchema(profile, schema)
 }
 
 func (app *workbench) openPostgreSQLSchema(profile preferences.ConnectionProfile, schema string) {
@@ -164,6 +168,9 @@ func (app *workbench) openPostgreSQLSchema(profile preferences.ConnectionProfile
 }
 
 func (app *workbench) openMySQL(profile preferences.ConnectionProfile) {
+	if isSQLQueryWorkspace(app.activeQuery) && app.activeQuery.queryConnectionID == profileConnectionID(profile) && app.activeQuery.queryNamespace != "" {
+		profile.Database = app.activeQuery.queryNamespace
+	}
 	app.openRemoteSQLProfile(profile, connection.DriverMySQL, "MySQL", mysqladapter.Connector{Profile: profile, Vault: app.vault})
 }
 
@@ -304,7 +311,7 @@ func (app *workbench) openRemoteSQLProfile(profile preferences.ConnectionProfile
 			app.openedLabel = profile.Name + " · " + profile.Host + "/" + profile.Database
 			app.openedEnvironment = profile.Environment
 			app.openedReadOnly = profile.ReadOnly
-			if app.activeQuery != nil && !app.activeQuery.connectionView && !app.activeQuery.dataView && !app.activeQuery.schemaView {
+			if app.canBindActiveQuery(app.openedConnectionID) {
 				app.activeQuery.queryConnectionID = app.openedConnectionID
 				app.activeQuery.queryNamespace = namespace
 			}

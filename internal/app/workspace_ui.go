@@ -7,6 +7,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/magalab/dbl/internal/connection"
+	"github.com/magalab/dbl/internal/preferences"
 )
 
 func (app *workbench) workspace(c *ui.Context) {
@@ -63,11 +64,14 @@ func (app *workbench) workspace(c *ui.Context) {
 					mode.Disabled(app.busy || app.dialogOpen)
 					if app.mongoUsePipeline {
 						app.mongoPipelineEditor.ReadOnly = app.busy || app.dialogOpen
+						app.applyEditorFont(app.mongoPipelineEditor)
 						editor.View(c, app.mongoPipelineEditor).FillWidth().Label(app.localized("MongoDB aggregation pipeline JSON"))
 					} else {
 						app.mongoFilterEditor.ReadOnly = app.busy || app.dialogOpen
 						app.mongoProjectionEditor.ReadOnly = app.busy || app.dialogOpen
+						app.applyEditorFont(app.mongoFilterEditor)
 						editor.View(c, app.mongoFilterEditor).FillWidth().Label(app.localized("MongoDB filter JSON"))
+						app.applyEditorFont(app.mongoProjectionEditor)
 						editor.View(c, app.mongoProjectionEditor).FillWidth().Label(app.localized("MongoDB projection JSON"))
 					}
 					ui.Row(c).Gap(6).Children(func() {
@@ -112,6 +116,7 @@ func (app *workbench) workspace(c *ui.Context) {
 						}
 						ui.Text(c, title).Role(ui.RoleHeading).Level(2)
 						app.mongoEditor.ReadOnly = app.mongoDocumentTruncated || app.busy || app.dialogOpen || (!app.mongoNewDocument && app.openedReadOnly)
+						app.applyEditorFont(app.mongoEditor)
 						editor.View(c, app.mongoEditor).FillWidth().Label(app.localized("MongoDB 文档 JSON"))
 						if !app.mongoDocumentTruncated {
 							tree := ui.Checkbox(c, &app.mongoTreeVisible, app.localized("显示可折叠 JSON 字段树"))
@@ -179,6 +184,20 @@ func (app *workbench) workspace(c *ui.Context) {
 			ui.Text(c, app.localized(app.activeQuery.title)).Bold().Role(ui.RoleHeading).Level(1)
 			if app.store == nil {
 				ui.Text(c, app.localized("未连接")).TextColor(c.Theme().TextMuted)
+				if app.activeQuery.queryConnectionID != "" {
+					ui.Text(c, app.activeQuery.queryConnectionID).SingleLine().Ellipsis("…").Grow(1).MinWidth(0).TextColor(c.Theme().TextMuted)
+					for _, profile := range app.connectionProfiles {
+						if profileConnectionID(profile) != app.activeQuery.queryConnectionID {
+							continue
+						}
+						reconnect := iconButton(c, app.localized("重新连接"), actionIcons["refresh"])
+						reconnect.Disabled(app.busy || app.exporting || app.dialogOpen)
+						if reconnect.Clicked() {
+							app.openSavedProfile(profile)
+						}
+						break
+					}
+				}
 			} else {
 				mode := ""
 				if app.openedReadOnly {
@@ -187,6 +206,9 @@ func (app *workbench) workspace(c *ui.Context) {
 				ui.Text(c, strings.ToUpper(string(app.openedDriver))+mode+" · "+app.openedLabel+" · "+app.localized(environmentLabel(app.openedEnvironment))).TextColor(c.Theme().TextMuted).SingleLine()
 			}
 		})
+		if app.queryDraftsEnabled && app.activeQuery.query.Buffer.Len() > preferences.MaxQueryDraftSQLBytes {
+			ui.Text(c, app.localized("此 SQL 草稿超过 256 KiB，不会自动保存。")).Padding(4, 12).TextColor(c.Theme().Danger)
+		}
 		ui.Row(c).FillWidth().Padding(4, 12).Gap(6).Children(func() {
 			if app.sqlQueryTabActive() && !app.aiDraftPending {
 				switch {
@@ -248,6 +270,7 @@ func (app *workbench) workspace(c *ui.Context) {
 		})
 		ui.SplitVertical(c, &app.queryEditorHeight, func() {
 			app.bindSQLCompletions(app.activeQuery)
+			app.applyEditorFont(app.activeQuery.query)
 			editor.View(c, app.activeQuery.query).Label(app.localized("SQL 查询编辑器")).Grow(1).FillWidth()
 		}, func() {
 			ui.SplitVertical(c, &app.resultHeight, func() {

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -144,6 +145,13 @@ func (app *workbench) setQueryHistoryEnabled(enabled bool) {
 }
 
 func (app *workbench) shutdown() {
+	if !app.shuttingDown {
+		if err := app.flushQueryDrafts(); err != nil {
+			log.Printf("save SQL drafts on exit: %v", err)
+		}
+	}
+	app.shuttingDown = true
+	app.stopQueryDraftSaveTimer()
 	app.cancelRedisTTLRefresh()
 	if app.lifecycleCancel != nil {
 		app.lifecycleCancel()

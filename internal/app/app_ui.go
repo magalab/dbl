@@ -11,6 +11,8 @@ import (
 )
 
 func (app *workbench) view(c *ui.Context) {
+	app.applyInterfaceTheme(c)
+	defer app.scheduleQueryDraftSave()
 	if app.status != "" && app.status != app.announcedStatus {
 		c.Announce(app.localized(app.status))
 		app.announcedStatus = app.status

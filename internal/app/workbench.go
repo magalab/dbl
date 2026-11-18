@@ -84,6 +84,17 @@ func (confirmation etcdWriteConfirmation) matches(key, value, leaseID string, ex
 }
 
 type workbench struct {
+	queryDraftsEnabled           bool
+	queryDraftsSaving            bool
+	queryDraftSaveTimer          *time.Timer
+	queryDraftSaveGeneration     uint64
+	queryDraftSaveRevision       uint64
+	observedQueryDrafts          []queryDraftObservation
+	interfaceSettings            preferences.InterfaceSettings
+	interfaceDraft               preferences.InterfaceSettings
+	interfaceSaving              bool
+	fontFamilies                 []ui.FontFamily
+	shuttingDown                 bool
 	window                       *mygo.Window
 	lifecycleCtx                 context.Context
 	lifecycleCancel              context.CancelFunc
@@ -593,6 +604,10 @@ func newWorkbench() *workbench {
 	app.path = existingSQLitePath(settings.LastSQLitePath)
 	app.recentSQLitePaths = settings.RecentSQLitePaths
 	app.connectionProfiles = settings.ConnectionProfiles
+	app.interfaceSettings = settings.Interface
+	app.interfaceDraft = settings.Interface
+	app.queryDraftsEnabled = settings.QueryDraftsEnabled
+	app.restoreQueryDrafts(settings.QueryDrafts, settings.ActiveQueryDraft)
 	app.queryHistoryEnabled = settings.QueryHistoryEnabled
 	for _, entry := range settings.QueryHistory {
 		app.workspaces[0].history = append(app.workspaces[0].history, queryRecord{

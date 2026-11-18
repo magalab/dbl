@@ -14,6 +14,10 @@ func (app *workbench) openSettings() {
 		app.settingsWindow.Focus()
 		return
 	}
+	app.interfaceDraft = app.interfaceSettings
+	if app.fontFamilies == nil {
+		app.fontFamilies = ui.FontFamilies()
+	}
 	win := mygo.NewWindow(mygo.WindowOptions{
 		Title:         app.localized("设置"),
 		Width:         520,
@@ -50,26 +54,31 @@ func (app *workbench) invalidateSettingsWindow() {
 }
 
 func (app *workbench) settingsView(c *ui.Context) {
+	app.applyInterfaceTheme(c)
 	bar := c.TitleBar()
 	ui.Column(c).Fill().Children(func() {
-		ui.Row(c).FillWidth().Height(max(bar.Height, 32)).Padding(0, bar.Right+12, 0, bar.Left+12).Gap(8).AlignItems(ui.Center).DragWindow().Children(func() {
+		ui.Row(c).FillWidth().Height(max(bar.Height, c.Theme().FontSize+18)).Padding(0, bar.Right+12, 0, bar.Left+12).AlignItems(ui.Center).DragWindow().Children(func() {
 			ui.Text(c, app.localized("设置")).Bold().SingleLine()
-			general := ui.Button(c, app.localized("常规")).Role(ui.RoleTab).Selected(app.settingsTab == "general")
-			if general.Clicked() {
-				app.settingsTab = "general"
-			}
-			shortcuts := ui.Button(c, app.localized("快捷键")).Role(ui.RoleTab).Selected(app.settingsTab == "shortcuts")
-			if shortcuts.Clicked() {
-				app.settingsTab = "shortcuts"
-			}
-			ai := ui.Button(c, app.localized("AI 助手")).Role(ui.RoleTab).Selected(app.settingsTab == "ai")
-			if ai.Clicked() {
-				app.settingsTab = "ai"
-			}
+		})
+		ui.ScrollHorizontal(c).FillWidth().Height(c.Theme().FontSize + 32).Shrink(0).Children(func() {
+			ui.Row(c).Padding(4, 14).Gap(8).Shrink(0).Children(func() {
+				for _, tab := range []struct{ id, label string }{
+					{"general", "常规"}, {"interface", "界面"}, {"shortcuts", "快捷键"}, {"ai", "AI 助手"},
+				} {
+					button := ui.Button(c, app.localized(tab.label)).Role(ui.RoleTab).Selected(app.settingsTab == tab.id).Shrink(0)
+					if button.Clicked() {
+						app.settingsTab = tab.id
+					}
+				}
+			})
 		})
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).Padding(14).Gap(8).Children(func() {
 				theme := c.Theme()
+				if app.settingsTab == "interface" {
+					app.interfaceSettingsUI(c)
+					return
+				}
 				if app.settingsTab == "ai" {
 					ui.Column(c).Padding(10).Gap(6).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
 						app.aiProviderSettings(c)
@@ -124,6 +133,19 @@ func (app *workbench) settingsView(c *ui.Context) {
 							app.setLanguage(nextLanguage)
 						}
 					})
+				})
+
+				ui.Column(c).Padding(14).Gap(8).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
+					ui.Text(c, app.localized("SQL 草稿")).Bold().Role(ui.RoleHeading).Level(2)
+					enabled := app.queryDraftsEnabled
+					drafts := ui.Checkbox(c, &enabled, app.localized("自动保存并恢复 SQL 草稿"))
+					drafts.Disabled(app.queryDraftsSaving || app.preferences == nil)
+					if drafts.Changed() {
+						app.setQueryDraftsEnabled(enabled)
+					}
+					ui.Text(c, app.localized("默认关闭。开启后将 SQL 标签、顺序和连接引用保存在本机；重启不自动连接或执行。关闭后清除已保存草稿。")).TextColor(theme.TextMuted)
+					ui.Text(c, app.localized("仅保存在本机；SQL 可能包含敏感值。")).TextColor(theme.TextMuted)
+					ui.Text(c, app.localized("输入停止约 750 毫秒后保存，退出前补存。最多 16 个标签，单个 SQL 上限 256 KiB；超限草稿不保存。关闭标签会移除其草稿。")).TextColor(theme.TextMuted)
 				})
 
 				ui.Column(c).Padding(14).Gap(8).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {

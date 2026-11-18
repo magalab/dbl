@@ -19,8 +19,19 @@ func Run() {
 			Title:         "DBL · 数据工作台",
 			Width:         1280,
 			Height:        820,
+			Maximized:     workbench.interfaceSettings.StartupMode == "maximized",
+			FullScreen:    workbench.interfaceSettings.StartupMode == "fullscreen",
 			TitleBarStyle: mygo.TitleBarHiddenInset,
 			Content:       ui.View(workbench.view),
+		})
+		workbench.window.OnClose(func(event *mygo.CloseEvent) {
+			if err := workbench.flushQueryDrafts(); err != nil {
+				event.PreventDefault()
+				workbench.reportError("保存 SQL 草稿失败", err)
+				workbench.window.Invalidate()
+				return
+			}
+			workbench.shuttingDown = true
 		})
 		workbench.window.OnClosed(workbench.shutdown)
 	})

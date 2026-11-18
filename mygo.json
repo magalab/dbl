@@ -4,6 +4,7 @@
   "version": "0.1.1",
   "copyright": "Copyright 2026 Magalab",
   "icon": "resources/icon.png",
+  "resourcesExclude": ["icon.png", "icon-macos.png"],
   "main": ".",
   "out": "build",
   "macos": {
