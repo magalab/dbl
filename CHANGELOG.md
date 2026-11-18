@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## [0.1.2] - 2026-11-18
 
-- Add signed in-app update checks, download progress, installation, and restart for macOS arm64 and Windows amd64.
+- Add signed in-app updates for macOS arm64 and Windows amd64, with opt-in background checks and a toolbar shortcut.
+- Add automatic SQL draft recovery and window startup mode / font preferences.
+- Improve saved connection workflows and add a Windows packaging command.
 
 ## 0.1.1 - 2026-11-17
 
