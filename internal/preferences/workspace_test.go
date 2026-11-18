@@ -63,7 +63,7 @@ func TestWorkspacePreferencesMergeUnrelatedOutOfOrderUpdates(t *testing.T) {
 	if err := store.SetQueryDrafts(true, drafts, 0, 3); err != nil {
 		t.Fatal(err)
 	}
-	settings := InterfaceSettings{StartupMode: "fullscreen", FontFamily: "Example Sans", FontSize: 18, EditorFont: "Example Mono", EditorFontSize: 16}
+	settings := InterfaceSettings{StartupMode: "fullscreen", CloseToTray: true, FontFamily: "Example Sans", FontSize: 18, EditorFont: "Example Mono", EditorFontSize: 16}
 	if err := store.SetInterface(settings, 4); err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestUpdateCheckIntervalDefaultsValidatesAndPersists(t *testing.T) {
 	if got := store.Settings().UpdateCheckIntervalHours; got != 24 {
 		t.Fatalf("default update interval = %d, want 24", got)
 	}
-	if err := store.SetUpdateCheckInterval(48, 2); err != nil {
+	if err := store.SetUpdateCheckInterval(12, 2); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SetUpdateCheckInterval(6, 1); err != nil {
@@ -102,11 +102,27 @@ func TestUpdateCheckIntervalDefaultsValidatesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := reloaded.Settings().UpdateCheckIntervalHours; got != 48 {
-		t.Fatalf("persisted update interval = %d, want 48", got)
+	if got := reloaded.Settings().UpdateCheckIntervalHours; got != 12 {
+		t.Fatalf("persisted update interval = %d, want 12", got)
 	}
-	if err := store.SetUpdateCheckInterval(0, 3); err == nil {
-		t.Fatal("zero update interval accepted")
+	for _, hours := range []int{0, 3, 48, 168} {
+		if err := store.SetUpdateCheckInterval(hours, 3); err == nil {
+			t.Errorf("unsupported update interval %d accepted", hours)
+		}
+	}
+}
+
+func TestLegacyUpdateCheckIntervalNormalizesToOneDay(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeSettings(dir, Settings{Version: 1, Interface: InterfaceSettings{StartupMode: "normal"}, UpdateCheckIntervalHours: 168}); err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenAt(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Settings().UpdateCheckIntervalHours; got != 24 {
+		t.Fatalf("legacy update interval = %d, want 24", got)
 	}
 }
 

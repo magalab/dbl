@@ -145,6 +145,10 @@ func (app *workbench) setQueryHistoryEnabled(enabled bool) {
 }
 
 func (app *workbench) shutdown() {
+	if app.tray != nil {
+		app.tray.Destroy()
+		app.tray = nil
+	}
 	if !app.shuttingDown {
 		if err := app.flushQueryDrafts(); err != nil {
 			log.Printf("save SQL drafts on exit: %v", err)

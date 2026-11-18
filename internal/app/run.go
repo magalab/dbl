@@ -8,6 +8,7 @@ import (
 	"github.com/egoist/mygo/plugins/updater"
 	"github.com/egoist/mygo/plugins/updater/native"
 	"github.com/egoist/mygo/ui"
+	"github.com/magalab/dbl/resources"
 )
 
 // Run initializes and starts the desktop application.
@@ -21,6 +22,11 @@ func Run() {
 	mygo.Use(native.New(updater.Options{
 		Interval:               updateInterval(workbench.updateIntervalHours),
 		DisableAutomaticChecks: true,
+		Icon:                   resources.MacOSIcon,
+		Strings: map[string]updater.Strings{
+			"en":      {UpToDateMessage: "\n%[1]s %[2]s is currently the newest version available."},
+			"zh-Hans": {UpToDateMessage: "\n%[1]s %[2]s 是目前可用的最新版本。"},
+		},
 	}))
 	mygo.App.SetMenu(mygo.NewMenu(appMenuItems(workbench, runtime.GOOS)))
 	mygo.App.WhenReady(func() {
@@ -37,6 +43,17 @@ func Run() {
 			Content:       ui.View(workbench.view),
 		})
 		workbench.window.OnClose(func(event *mygo.CloseEvent) {
+			if workbench.interfaceSettings.CloseToTray && workbench.tray != nil && runtime.GOOS == "windows" && !workbench.quitting {
+				if err := workbench.flushQueryDrafts(); err != nil {
+					event.PreventDefault()
+					workbench.reportError("保存 SQL 草稿失败", err)
+					workbench.window.Invalidate()
+					return
+				}
+				event.PreventDefault()
+				workbench.window.Hide()
+				return
+			}
 			if err := workbench.flushQueryDrafts(); err != nil {
 				event.PreventDefault()
 				workbench.reportError("保存 SQL 草稿失败", err)
@@ -46,6 +63,9 @@ func Run() {
 			workbench.shuttingDown = true
 		})
 		workbench.window.OnClosed(workbench.shutdown)
+		mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { workbench.quitting = true })
+		mygo.App.OnQuitCanceled(func() { workbench.quitting = false })
+		workbench.syncTray()
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)

@@ -71,6 +71,7 @@ func (app *workbench) openMongo(profile preferences.ConnectionProfile) {
 		app.window.Update(func() {
 			app.busy = false
 			app.mongoCancel = nil
+			app.finishWelcomeConnectionAttempt(profile.ID, err)
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					app.status = app.localized("MongoDB 连接已取消。")

@@ -106,6 +106,7 @@ func (app *workbench) openSQLite(access sqlite.AccessMode) {
 		}
 		app.window.Update(func() {
 			app.busy = false
+			app.finishWelcomeConnectionAttempt(openedProfileID, err)
 			if err != nil {
 				app.reportError("打开 SQLite 失败", err)
 				return
@@ -283,6 +284,7 @@ func (app *workbench) openRemoteSQLProfile(profile preferences.ConnectionProfile
 		}
 		app.window.Update(func() {
 			app.busy = false
+			app.finishWelcomeConnectionAttempt(profile.ID, err)
 			if err != nil {
 				app.sqlNamespaceChoice = app.sqlNamespace
 				app.reportError("连接 "+label+" 失败", err)

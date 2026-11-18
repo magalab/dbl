@@ -21,6 +21,7 @@ type QueryDraft struct {
 
 type InterfaceSettings struct {
 	StartupMode    string  `json:"startup_mode,omitempty"`
+	CloseToTray    bool    `json:"close_to_tray,omitempty"`
 	FontFamily     string  `json:"font_family,omitempty"`
 	FontSize       float32 `json:"font_size,omitempty"`
 	EditorFont     string  `json:"editor_font,omitempty"`

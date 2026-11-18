@@ -98,6 +98,8 @@ type workbench struct {
 	interfaceSaving              bool
 	fontFamilies                 []ui.FontFamily
 	shuttingDown                 bool
+	quitting                     bool
+	tray                         *mygo.Tray
 	window                       *mygo.Window
 	lifecycleCtx                 context.Context
 	lifecycleCancel              context.CancelFunc
@@ -412,6 +414,9 @@ type workbench struct {
 	errorSummary                 string
 	errorDetails                 string
 	showErrorDetails             bool
+	welcomeConnectionProfileID   string
+	welcomeConnectionProfileName string
+	welcomeConnectionPending     bool
 	announcedStatus              string
 	status                       string
 }

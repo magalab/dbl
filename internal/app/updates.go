@@ -38,11 +38,11 @@ func (app *workbench) updateSettingsUI(c *ui.Context) {
 		}
 		ui.Text(c, app.localized("发现新版本时会提示安装。")).FillWidth().TextColor(theme.TextMuted)
 
-		intervals := []int{6, 12, 24, 48, 168}
-		labels := []string{"6 小时", "12 小时", "24 小时", "48 小时", "7 天"}
+		intervals := []int{1, 2, 6, 12, 24}
+		labels := []string{"1 小时", "2 小时", "6 小时", "12 小时", "24 小时"}
 		index := slices.Index(intervals, app.updateIntervalHours)
 		if index < 0 {
-			index = 2
+			index = len(intervals) - 1
 		}
 		selected := app.localized(labels[index])
 		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
@@ -73,7 +73,7 @@ func localizedOptions(app *workbench, labels []string) []string {
 }
 
 func (app *workbench) saveUpdateInterval(hours int) {
-	if app.preferences == nil || app.updateIntervalSaving || hours < 1 || hours > 168 {
+	if app.preferences == nil || app.updateIntervalSaving || !validUpdateIntervalHours(hours) {
 		return
 	}
 	store := app.preferences
@@ -100,4 +100,13 @@ func (app *workbench) saveUpdateInterval(hours int) {
 
 func updateInterval(hours int) time.Duration {
 	return time.Duration(hours) * time.Hour
+}
+
+func validUpdateIntervalHours(hours int) bool {
+	switch hours {
+	case 1, 2, 6, 12, 24:
+		return true
+	default:
+		return false
+	}
 }

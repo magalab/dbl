@@ -30,6 +30,7 @@ func (app *workbench) connectionWelcome(c *ui.Context) {
 	ui.Column(c).Fill().AlignItems(ui.Center).Children(func() {
 		ui.Scroll(c).Fill().Children(func() {
 			ui.Column(c).Width(1380).MaxWidthPercent(96).Padding(24).Gap(18).Children(func() {
+				app.welcomeConnectionFeedback(c)
 				ui.Row(c).FillWidth().Gap(12).Children(func() {
 					app.welcomeStat(c, app.localized("连接总数"), fmt.Sprint(len(app.connectionProfiles)), actionIcons["folder"])
 					app.welcomeStat(c, app.localized("已连接"), fmt.Sprint(connected), actionIcons["refresh"])
@@ -123,6 +124,47 @@ func (app *workbench) connectionWelcome(c *ui.Context) {
 				})
 			})
 		})
+	})
+}
+
+func (app *workbench) welcomeConnectionFeedback(c *ui.Context) {
+	if app.welcomeConnectionProfileID == "" {
+		return
+	}
+	theme := c.Theme()
+	if app.welcomeConnectionPending {
+		ui.Row(c).FillWidth().Padding(12).Gap(12).AlignItems(ui.Center).Background(theme.Surface).Border(1, theme.Accent).Radius(theme.Radius).Children(func() {
+			ui.Spinner(c).Size(20, 20).TextColor(theme.Accent).Label(app.localized("正在连接数据库"))
+			ui.Column(c).Grow(1).Gap(3).Children(func() {
+				ui.Text(c, app.localized("正在连接：")+app.welcomeConnectionProfileName).Bold()
+				ui.Text(c, app.localized("连接失败时会在这里显示原因。 ")).TextColor(theme.TextMuted)
+			})
+		})
+		return
+	}
+	if app.errorSummary != app.status || app.errorSummary == "" {
+		return
+	}
+	ui.Column(c).FillWidth().Padding(12).Gap(8).Background(theme.Surface).Border(1, theme.Danger).Radius(theme.Radius).Children(func() {
+		ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, actionIcons["warning"]).Size(20, 20).TextColor(theme.Danger)
+			ui.Column(c).Grow(1).Gap(3).Children(func() {
+				ui.Text(c, app.localized("连接失败：")+app.welcomeConnectionProfileName).Bold().TextColor(theme.Danger)
+				ui.Text(c, app.localized(app.errorSummary)).FillWidth()
+			})
+			retry := ui.Button(c, app.localized("重试连接"))
+			retry.Disabled(app.busy || app.exporting || app.dialogOpen)
+			if retry.Clicked() {
+				app.retryWelcomeConnection()
+			}
+			close := iconButton(c, app.localized("关闭提示"), actionIcons["close"])
+			if close.Clicked() {
+				app.dismissWelcomeConnectionFeedback()
+			}
+		})
+		if app.errorDetails != "" {
+			ui.Text(c, app.errorDetails).FillWidth().TextColor(theme.TextMuted).Selectable()
+		}
 	})
 }
 

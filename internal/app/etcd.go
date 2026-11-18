@@ -52,6 +52,7 @@ func (app *workbench) openEtcd(profile preferences.ConnectionProfile) {
 		}
 		app.window.Update(func() {
 			app.busy = false
+			app.finishWelcomeConnectionAttempt(profile.ID, err)
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					app.status = app.localized("etcd 连接已取消。")

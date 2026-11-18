@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4] - 2026-11-18
+
+- Show the existing rounded-square application icon with more title spacing in the update dialog.
+- Offer update check intervals of 1, 2, 6, 12, and 24 hours; legacy values fall back to 24 hours.
+- Add an optional Windows setting to keep DBL in the system tray when its window closes.
+- Show prominent connection progress and retry details when a Quick Start connection fails.
+
 ## [0.1.3] - 2026-11-18
 
 - Show the DBL application icon in the native update window.

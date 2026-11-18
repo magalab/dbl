@@ -227,7 +227,7 @@ func OpenAt(dir string) (*Store, error) {
 	if settings.UpdateCheckIntervalHours == 0 {
 		settings.UpdateCheckIntervalHours = 24
 	}
-	if settings.UpdateCheckIntervalHours < 1 || settings.UpdateCheckIntervalHours > 168 {
+	if !validUpdateCheckInterval(settings.UpdateCheckIntervalHours) {
 		settings.UpdateCheckIntervalHours = 24
 	}
 	store.settings = settings
@@ -437,8 +437,8 @@ func (store *Store) Settings() Settings {
 // SetUpdateCheckInterval persists the update check interval without replacing
 // unrelated settings written by concurrent preference operations.
 func (store *Store) SetUpdateCheckInterval(hours int, revision uint64) error {
-	if hours < 1 || hours > 168 {
-		return errors.New("update check interval must be between 1 and 168 hours")
+	if !validUpdateCheckInterval(hours) {
+		return errors.New("update check interval must be 1, 2, 6, 12, or 24 hours")
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -452,6 +452,15 @@ func (store *Store) SetUpdateCheckInterval(hours int, revision uint64) error {
 	}
 	store.settings, store.updateIntervalRevision = settings, revision
 	return nil
+}
+
+func validUpdateCheckInterval(hours int) bool {
+	switch hours {
+	case 1, 2, 6, 12, 24:
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeQueryHistory(entries []QueryHistoryEntry) []QueryHistoryEntry {

@@ -70,6 +70,7 @@ func (app *workbench) openRedis(profile preferences.ConnectionProfile) {
 		app.window.Update(func() {
 			app.busy = false
 			app.cancelRedis = nil
+			app.finishWelcomeConnectionAttempt(profile.ID, err)
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					app.status = app.localized("Redis 连接已取消。")

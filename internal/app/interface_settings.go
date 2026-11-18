@@ -1,6 +1,7 @@
 package app
 
 import (
+	"runtime"
 	"slices"
 	"strconv"
 
@@ -43,6 +44,15 @@ func (app *workbench) interfaceSettingsUI(c *ui.Context) {
 			app.interfaceDraft.StartupMode = modes[slices.Index(labels, selected)]
 		}
 		ui.Text(c, app.localized("窗口启动方式在下次打开应用时生效。")).TextColor(theme.TextMuted)
+		if runtime.GOOS == "windows" {
+			closeToTray := app.interfaceDraft.CloseToTray
+			check := ui.Checkbox(c, &closeToTray, app.localized("关闭窗口时最小化到托盘"))
+			check.Disabled(app.interfaceSaving)
+			if check.Changed() {
+				app.interfaceDraft.CloseToTray = closeToTray
+			}
+			ui.Text(c, app.localized("启用后，关闭按钮会隐藏窗口；可从系统托盘恢复窗口或退出应用。")).TextColor(theme.TextMuted)
+		}
 	})
 	ui.Column(c).Padding(14).Gap(12).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
 		ui.Text(c, app.localized("字体")).Bold().Role(ui.RoleHeading).Level(2)
@@ -198,6 +208,7 @@ func (app *workbench) saveInterfaceSettings() {
 				app.reportError("保存界面设置失败", err)
 			} else {
 				app.interfaceSettings, app.interfaceDraft = settings, settings
+				app.syncTray()
 				app.status = app.localized("界面设置已保存。")
 			}
 			app.invalidateSettingsWindow()

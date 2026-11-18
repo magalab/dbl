@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -241,6 +242,11 @@ func (app *workbench) openSavedProfile(profile preferences.ConnectionProfile) {
 		app.activateConnectionWorkspace(id)
 		return
 	}
+	name := profile.Name
+	if name == "" {
+		name = welcomeDriverLabel(profile.Driver)
+	}
+	app.beginWelcomeConnectionAttempt(profile.ID, name)
 	app.loadConnectionProfile(profile)
 	switch profile.Driver {
 	case preferences.DriverSQLite:
@@ -260,7 +266,8 @@ func (app *workbench) openSavedProfile(profile preferences.ConnectionProfile) {
 	case preferences.DriverEtcd:
 		app.openEtcd(profile)
 	default:
-		app.status = app.localized("该连接驱动尚不可用。")
+		app.reportError("该连接驱动尚不可用。", nil)
+		app.finishWelcomeConnectionAttempt(profile.ID, errors.New(app.status))
 	}
 }
 
