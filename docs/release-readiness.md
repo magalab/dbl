@@ -1,6 +1,6 @@
 # 发布准备与支持矩阵
 
-状态：0.1.1 首次公开试发已发布；下列未完成验收项继续保留，不因生成或发布安装包而视为通过。此文件记录候选范围及验收证据，不构成完整平台支持承诺。
+状态：下列未完成验收项继续保留，不因生成或发布安装包而视为通过。平台验收证据见候选矩阵；此文件不构成完整平台支持承诺。
 
 ## 候选矩阵
 
@@ -22,7 +22,7 @@ go install github.com/egoist/mygo/cmd/mygo@$(go list -m -f '{{.Version}}' github
 CGO_ENABLED=0 mygo build -platform darwin/arm64,windows/amd64 -sign - -skip-notarize
 ```
 
-构建会将 MyGo 原生 UI 打包为各平台安装产物。Windows/Linux 使用 `mygo.json` 指定的 `resources/icon.png`；macOS 额外使用 `packaging/macos/Assets.car`，其资产目录源文件在 `packaging/macos/Assets.xcassets/`，圆角图源为 `resources/icon-macos.png`。MyGo 将 `Assets.car` 作为 macOS 图标资源优先于默认 `.icns`，其余平台继续使用通用图标。两个 PNG 构建输入通过 `resourcesExclude` 排除独立资源复制，Windows 应用和安装器的图标仍内嵌在 EXE 中。发布采用 GitHub Releases 直接分发，不考虑各平台应用商店。macOS 使用 ad-hoc 签名，不要求 Developer ID 或 Apple 公证；Windows 安装器未签名。应用内更新使用独立 Ed25519 签名密钥，公钥随应用配置发布，私钥只存受控备份和 CI Secret。公共仓库为 `magalab/dbl`；Actions 构建和草稿发布流程见 [GitHub Actions 说明](github-actions.md)。Go runtime 依赖已生成版本化许可清单，完整上游许可/通知及 MPL-2.0 MySQL 源码已放入 MyGo 自动打包的 `resources/`；最新 darwin/arm64 app bundle 已核对包含 105 个许可/通知/源码文件，与源目录逐文件 SHA-256 一致。DBL 自有代码采用 MIT License，许可文本位于根目录 `LICENSE`，并复制到 `resources/LICENSE` 随应用分发；非 Go 打包资产许可审查和整体法律审阅仍待完成。
+构建会将 MyGo 原生 UI 打包为各平台安装产物。Windows/Linux 使用 `mygo.json` 指定的 `resources/icon.png`；该 PNG 也作为应用资源保留，用于原生更新弹窗。macOS 额外使用 `packaging/macos/Assets.car`，其资产目录源文件在 `packaging/macos/Assets.xcassets/`，圆角图源为 `resources/icon-macos.png`；`icon-macos.png` 通过 `resourcesExclude` 排除。MyGo 将 `Assets.car` 作为 macOS 图标资源优先于默认 `.icns`，其余平台继续使用通用图标。Windows 应用和安装器的图标仍内嵌在 EXE 中。发布采用 GitHub Releases 直接分发，不考虑各平台应用商店。macOS 使用 ad-hoc 签名，不要求 Developer ID 或 Apple 公证；Windows 安装器未签名。应用内更新使用独立 Ed25519 签名密钥，公钥随应用配置发布，私钥只存受控备份和 CI Secret。公共仓库为 `magalab/dbl`；Actions 构建和草稿发布流程见 [GitHub Actions 说明](github-actions.md)。Go runtime 依赖已生成版本化许可清单，完整上游许可/通知及 MPL-2.0 MySQL 源码已放入 MyGo 自动打包的 `resources/`；最新 darwin/arm64 app bundle 已核对包含 105 个许可/通知/源码文件，与源目录逐文件 SHA-256 一致。DBL 自有代码采用 MIT License，许可文本位于根目录 `LICENSE`，并复制到 `resources/LICENSE` 随应用分发；非 Go 打包资产许可审查和整体法律审阅仍待完成。
 
 macOS 从“DBL”应用菜单、Linux/Windows 从“帮助”菜单打开“关于 DBL”面板；面板显示打包版本、DBL 名称和 MyGo 版本，未打包的开发运行显示“开发版”。
 

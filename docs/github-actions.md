@@ -21,7 +21,7 @@
 
 每个目标独立构建并上传 Actions artifact，保留 14 天。手动构建只上传 artifact；标签构建在全部成功后创建或更新对应的草稿 Release，并附上 SHA256SUMS。已有正式发布的 Release 不会被覆盖。Windows 安装器依赖由 MyGo CLI 自动准备；无须配置 Apple 签名证书或公证凭据。
 
-`resources/icon.png` 和 `resources/icon-macos.png` 是构建图标输入，通过 `resourcesExclude` 排除独立文件复制；Windows 应用与安装器的图标仍由 MyGo 内嵌。Windows 安装目录保留 `DBL.exe`、`Uninstall.exe`、`.mygo-files` 安装文件清单、`LICENSE`、`THIRD_PARTY_NOTICES.md` 和 `THIRD_PARTY_LICENSES/`。安装与覆盖升级行为仍需 Windows 实机验收。
+`resources/icon.png` 作为构建图标输入，也会保留为应用资源供原生更新弹窗显示；`resources/icon-macos.png` 由 `resourcesExclude` 排除。Windows 应用与安装器的图标仍由 MyGo 内嵌。Windows 安装目录保留 `DBL.exe`、`Uninstall.exe`、`.mygo-files` 安装文件清单、`LICENSE`、`THIRD_PARTY_NOTICES.md` 和 `THIRD_PARTY_LICENSES/`。安装与覆盖升级行为仍需 Windows 实机验收。
 
 发布步骤：
 

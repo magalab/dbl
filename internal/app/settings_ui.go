@@ -1,6 +1,8 @@
 package app
 
 import (
+	"runtime"
+
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -86,18 +88,22 @@ func (app *workbench) settingsView(c *ui.Context) {
 					return
 				}
 				if app.settingsTab == "shortcuts" {
-					ui.Column(c).Padding(10).Gap(6).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
+					ui.Column(c).Padding(14).Gap(12).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
 						ui.Text(c, app.localized("应用操作")).Bold().Role(ui.RoleHeading).Level(2)
-						app.settingsShortcut(c, "新建连接…", "⌘/Ctrl + N")
-						app.settingsShortcut(c, "打开 SQLite 文件…", "⌘/Ctrl + O")
-						app.settingsShortcut(c, "新建查询工作区", "⌘/Ctrl + T")
-						app.settingsShortcut(c, "执行 SQL", "⌘/Ctrl + Enter")
-						app.settingsShortcut(c, "打开设置…", "⌘/Ctrl + ,")
+						ui.Grid(c).Columns(2).GapX(20).GapY(10).Children(func() {
+							app.settingsShortcut(c, "新建连接…", "N")
+							app.settingsShortcut(c, "打开 SQLite 文件…", "O")
+							app.settingsShortcut(c, "新建查询工作区", "T")
+							app.settingsShortcut(c, "执行 SQL", "Enter")
+							app.settingsShortcut(c, "打开设置…", ",")
+						})
 					})
-					ui.Column(c).Padding(10).Gap(6).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
+					ui.Column(c).Padding(14).Gap(12).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
 						ui.Text(c, app.localized("面板快捷键")).Bold().Role(ui.RoleHeading).Level(2)
-						app.settingsShortcut(c, "左侧边栏", "⌘/Ctrl + B")
-						app.settingsShortcut(c, "AI 助手", "⌘/Ctrl + Shift + B")
+						ui.Grid(c).Columns(2).GapX(20).GapY(10).Children(func() {
+							app.settingsShortcut(c, "左侧边栏", "B")
+							app.settingsShortcut(c, "AI 助手", "Shift + B")
+						})
 					})
 					return
 				}
@@ -136,28 +142,34 @@ func (app *workbench) settingsView(c *ui.Context) {
 				})
 
 				ui.Column(c).Padding(14).Gap(8).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
-					ui.Text(c, app.localized("SQL 草稿")).Bold().Role(ui.RoleHeading).Level(2)
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+						ui.Text(c, app.localized("SQL 草稿")).Bold().Role(ui.RoleHeading).Level(2).Grow(1)
+						info := iconButton(c, app.localized("SQL 草稿保存说明"), actionIcons["info"])
+						info.Size(26, 26).Padding(3).Tooltip(app.localized("SQL 草稿保存详情"))
+					})
 					enabled := app.queryDraftsEnabled
 					drafts := ui.Checkbox(c, &enabled, app.localized("自动保存并恢复 SQL 草稿"))
 					drafts.Disabled(app.queryDraftsSaving || app.preferences == nil)
 					if drafts.Changed() {
 						app.setQueryDraftsEnabled(enabled)
 					}
-					ui.Text(c, app.localized("默认关闭。开启后将 SQL 标签、顺序和连接引用保存在本机；重启不自动连接或执行。关闭后清除已保存草稿。")).TextColor(theme.TextMuted)
-					ui.Text(c, app.localized("仅保存在本机；SQL 可能包含敏感值。")).TextColor(theme.TextMuted)
-					ui.Text(c, app.localized("输入停止约 750 毫秒后保存，退出前补存。最多 16 个标签，单个 SQL 上限 256 KiB；超限草稿不保存。关闭标签会移除其草稿。")).TextColor(theme.TextMuted)
+					ui.Text(c, app.localized("草稿仅保存在本机；重启后不会自动连接或执行。")).TextColor(theme.TextMuted)
 				})
 
 				app.updateSettingsUI(c)
 
 				ui.Column(c).Padding(14).Gap(8).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
-					ui.Text(c, app.localized("查询历史")).Bold().Role(ui.RoleHeading).Level(2)
+					ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+						ui.Text(c, app.localized("查询历史")).Bold().Role(ui.RoleHeading).Level(2).Grow(1)
+						info := iconButton(c, app.localized("查询历史保存说明"), actionIcons["info"])
+						info.Size(26, 26).Padding(3).Tooltip(app.localized("默认关闭。开启后会把 SQL 文本、时间、行数和状态写入本机设置文件；SQL 可能包含敏感值。关闭会删除已保存历史。"))
+					})
 					history := ui.Checkbox(c, &app.queryHistoryEnabled, app.localized("将最近查询 SQL 保存在本机"))
 					history.Disabled(app.busy || app.exporting || app.dialogOpen || app.queryHistorySaving || app.cursor != nil || app.preferences == nil)
 					if history.Changed() {
 						app.setQueryHistoryEnabled(app.queryHistoryEnabled)
 					}
-					ui.Text(c, app.localized("历史默认只保留在本次运行中；开启后 SQL 会写入本机设置文件。可随时关闭并清除已保存历史。 ")).TextColor(theme.TextMuted)
+					ui.Text(c, app.localized("默认仅保留在本次运行；开启后保存到本机。")).TextColor(theme.TextMuted)
 				})
 			})
 		})
@@ -166,8 +178,12 @@ func (app *workbench) settingsView(c *ui.Context) {
 
 func (app *workbench) settingsShortcut(c *ui.Context, label, keys string) {
 	ui.Row(c).Gap(12).Children(func() {
-		ui.Text(c, app.localized(label)).Grow(1)
-		ui.Text(c, keys).TextColor(c.Theme().TextMuted)
+		modifier := "Ctrl"
+		if runtime.GOOS == "darwin" {
+			modifier = "⌘"
+		}
+		ui.Text(c, app.localized(label)).Grow(1).SingleLine()
+		ui.Text(c, modifier+" + "+keys).TextColor(c.Theme().TextMuted).SingleLine()
 	})
 }
 

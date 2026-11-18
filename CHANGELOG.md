@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.3] - 2026-11-18
+
+- Show the DBL application icon in the native update window.
+- Move detailed settings explanations into localized hover tips.
+- Arrange shortcuts in two columns and show the platform-specific modifier.
+
 ## [0.1.2] - 2026-11-18
 
 - Add signed in-app updates for macOS arm64 and Windows amd64, with opt-in background checks and a toolbar shortcut.

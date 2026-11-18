@@ -22,7 +22,11 @@ func (app *workbench) updateToolbarButton(c *ui.Context) {
 func (app *workbench) updateSettingsUI(c *ui.Context) {
 	theme := c.Theme()
 	ui.Column(c).Padding(12).Gap(8).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
-		ui.Text(c, app.localized("应用更新")).Bold().Role(ui.RoleHeading).Level(2)
+		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+			ui.Text(c, app.localized("应用更新")).Bold().Role(ui.RoleHeading).Level(2).Grow(1)
+			info := iconButton(c, app.localized("应用更新说明"), actionIcons["info"])
+			info.Size(26, 26).Padding(3).Tooltip(app.localized("开启后按设定间隔检查更新；发现新版本时显示更新窗口。默认关闭。"))
+		})
 		if !app.updatesEnabled {
 			ui.Text(c, app.localized("应用内更新仅适用于安装在当前用户可写目录的正式版本。")).TextColor(theme.TextMuted)
 			return
@@ -32,7 +36,7 @@ func (app *workbench) updateSettingsUI(c *ui.Context) {
 		if check.Changed() {
 			updater.SetAutomaticChecks(automatic)
 		}
-		ui.Text(c, app.localized("开启后按设定间隔检查更新；发现新版本时显示更新窗口。默认关闭。")).FillWidth().TextColor(theme.TextMuted)
+		ui.Text(c, app.localized("发现新版本时会提示安装。")).FillWidth().TextColor(theme.TextMuted)
 
 		intervals := []int{6, 12, 24, 48, 168}
 		labels := []string{"6 小时", "12 小时", "24 小时", "48 小时", "7 天"}
@@ -43,8 +47,7 @@ func (app *workbench) updateSettingsUI(c *ui.Context) {
 		selected := app.localized(labels[index])
 		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-				ui.Text(c, app.localized("检查间隔")).Bold()
-				ui.Text(c, app.localized("更改后下次启动生效。手动检查可随时进行。")).FillWidth().TextColor(theme.TextMuted)
+				ui.Text(c, app.localized("检查间隔")).Bold().Tooltip(app.localized("更改后下次启动生效。手动检查可随时进行。"))
 			})
 			picker := ui.Select(c, &selected, localizedOptions(app, labels)).Width(142).MinWidth(0).Label(app.localized("检查间隔"))
 			picker.Disabled(app.updateIntervalSaving)

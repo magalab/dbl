@@ -6,9 +6,11 @@ import (
 )
 
 var englishUI = map[string]string{
-	"应用更新":   "Application updates",
-	"检查更新":   "Check for updates",
-	"自动检查更新": "Check for updates automatically",
+	"应用更新":         "Application updates",
+	"检查更新":         "Check for updates",
+	"自动检查更新":       "Check for updates automatically",
+	"应用更新说明":       "Update settings details",
+	"发现新版本时会提示安装。": "You’ll be prompted when an update is available.",
 	"开启后按设定间隔检查更新；发现新版本时显示更新窗口。默认关闭。": "When enabled, the app checks at the selected interval and opens the updater when an update is available. Off by default.",
 	"检查间隔": "Check interval",
 	"更改后下次启动生效。手动检查可随时进行。": "Changes take effect on next launch. You can check manually at any time.",
@@ -43,6 +45,9 @@ var englishUI = map[string]string{
 	"界面设置已保存。":       "Interface settings saved.",
 	"SQL 草稿":         "SQL drafts",
 	"自动保存并恢复 SQL 草稿": "Automatically save and restore SQL drafts",
+	"SQL 草稿保存说明":     "SQL draft storage details",
+	"SQL 草稿保存详情":     "Off by default. Drafts stay on this device and include SQL tabs, order, and connection references. They save about 750 ms after typing stops and again before exit, with up to 16 tabs and 256 KiB per SQL. Oversized drafts are skipped. Restart does not connect or execute SQL. Turning this off or closing a tab deletes its saved draft.",
+	"草稿仅保存在本机；重启后不会自动连接或执行。":                                                "Drafts stay on this device; restart will not connect or execute SQL.",
 	"默认关闭。开启后将 SQL 标签、顺序和连接引用保存在本机；重启不自动连接或执行。关闭后清除已保存草稿。":                  "Off by default. Saves SQL tabs, their order and connection references locally. Restarting does not connect or execute SQL. Turning this off clears saved drafts.",
 	"输入停止约 750 毫秒后保存，退出前补存。最多 16 个标签，单个 SQL 上限 256 KiB；超限草稿不保存。关闭标签会移除其草稿。": "Saves about 750 ms after typing stops and again before exit. Up to 16 tabs, 256 KiB per SQL draft; oversized drafts are not saved. Closing a tab removes its draft.",
 	"保存 SQL 草稿失败":                "Failed to save SQL drafts",
@@ -88,7 +93,7 @@ var englishUI = map[string]string{
 	"新建连接…": "New Connection…", "新建查询": "New Query", "打开 AI 助手": "Open AI Assistant", "关闭 AI 助手": "Close AI Assistant",
 	"设置": "Settings", "设置…": "Settings…", "关闭": "Close", "常规": "General", "外观": "Appearance", "当前：": "Current: ",
 	"浅色": "Light", "深色": "Dark", "跟随系统": "System", "外观：跟随系统": "Appearance: System", "外观：浅色": "Appearance: Light", "外观：深色": "Appearance: Dark", "语言": "Language", "语言：中文": "Language: Chinese", "语言：English": "Language: English", "切换外观": "Cycle Appearance", "切换语言": "Switch Language", "中文": "中文", "English": "English",
-	"查询历史": "Query History", "将最近查询 SQL 保存在本机": "Save recent SQL queries locally", "历史默认只保留在本次运行中；开启后 SQL 会写入本机设置文件。可随时关闭并清除已保存历史。 ": "History stays in this session by default. When enabled, SQL is saved in local settings. You can turn it off and clear saved history at any time.",
+	"查询历史": "Query History", "默认仅保留在本次运行；开启后保存到本机。": "Kept for this session by default; when enabled, saved locally.", "将最近查询 SQL 保存在本机": "Save recent SQL queries locally", "历史默认只保留在本次运行中；开启后 SQL 会写入本机设置文件。可随时关闭并清除已保存历史。 ": "History stays in this session by default. When enabled, SQL is saved in local settings. You can turn it off and clear saved history at any time.",
 	"AI provider": "AI Provider", "AI 助手已启用": "AI Assistant Enabled", "AI 助手未启用": "AI Assistant Disabled", "配置…": "Configure…", "保存时移除已保存 API key": "Remove saved API key when saving", "启用 AI（请求会发送到上方 provider）": "Enable AI (requests are sent to the provider above)", "Endpoint、模型和本机加密凭据库中的 API key 在 AI 助手工作区管理。 ": "Manage the endpoint, model, and API key in the AI Assistant workspace.", "打开 AI 助手设置": "Open AI Assistant Settings",
 	"切换语言 · 中文": "Switch Language · 中文", "切换语言 · English": "Switch Language · English", "保存语言设置失败": "Failed to save language preference", "语言设置已保存。": "Language preference saved.",
 	"连接与资源": "Connections & Resources", "尚未打开 SQLite 文件": "No SQLite file is open", "在顶部输入路径后打开数据库。": "Enter a path above to open a database.", "最近打开": "Recently Opened", "已保存的连接": "Saved Connections", "检查器": "Inspector",
