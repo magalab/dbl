@@ -32,6 +32,10 @@ func (app *workbench) applyEditorFont(state *editor.State) {
 
 func (app *workbench) interfaceSettingsUI(c *ui.Context) {
 	theme := c.Theme()
+	ui.Text(c, app.localized("更改会自动保存。 ")).TextColor(theme.TextMuted)
+	if app.interfaceSaveFailed {
+		ui.Text(c, app.localized("保存界面设置失败")).TextColor(theme.Danger)
+	}
 	ui.Column(c).Padding(14).Gap(12).Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
 		ui.Text(c, app.localized("窗口启动方式")).Bold().Role(ui.RoleHeading).Level(2)
 		modes := []string{"normal", "maximized", "fullscreen"}
@@ -42,6 +46,7 @@ func (app *workbench) interfaceSettingsUI(c *ui.Context) {
 		mode.Disabled(app.interfaceSaving)
 		if mode.Changed() {
 			app.interfaceDraft.StartupMode = modes[slices.Index(labels, selected)]
+			app.saveInterfaceSettings()
 		}
 		ui.Text(c, app.localized("窗口启动方式在下次打开应用时生效。")).TextColor(theme.TextMuted)
 		if runtime.GOOS == "windows" {
@@ -50,6 +55,7 @@ func (app *workbench) interfaceSettingsUI(c *ui.Context) {
 			check.Disabled(app.interfaceSaving)
 			if check.Changed() {
 				app.interfaceDraft.CloseToTray = closeToTray
+				app.saveInterfaceSettings()
 			}
 			ui.Text(c, app.localized("启用后，关闭按钮会隐藏窗口；可从系统托盘恢复窗口或退出应用。")).TextColor(theme.TextMuted)
 		}
@@ -58,20 +64,7 @@ func (app *workbench) interfaceSettingsUI(c *ui.Context) {
 		ui.Text(c, app.localized("字体")).Bold().Role(ui.RoleHeading).Level(2)
 		app.fontSettingsGroup(c, false)
 		app.fontSettingsGroup(c, true)
-		ui.Text(c, app.localized("字体保存后即时生效；缺失字体由系统回退。编辑器字体用于 SQL 和 JSON 编辑器。")).TextColor(theme.TextMuted)
-	})
-	ui.Row(c).Gap(8).Children(func() {
-		reset := iconButton(c, app.localized("恢复默认界面设置"), actionIcons["refresh"])
-		reset.Disabled(app.interfaceSaving)
-		if reset.Clicked() {
-			app.interfaceDraft = preferences.InterfaceSettings{StartupMode: "normal"}
-		}
-		ui.Spacer(c)
-		save := iconPrimaryButton(c, app.localized("保存界面设置"), actionIcons["save"])
-		save.Disabled(app.interfaceSaving || app.preferences == nil || app.interfaceDraft == app.interfaceSettings)
-		if save.Clicked() {
-			app.saveInterfaceSettings()
-		}
+		ui.Text(c, app.localized("字体即时生效；缺失字体由系统回退。编辑器字体用于 SQL 和 JSON 编辑器。")).TextColor(theme.TextMuted)
 	})
 }
 
@@ -161,6 +154,7 @@ func (app *workbench) fontPreference(c *ui.Context, label string, value *string,
 		if selected == defaultLabel {
 			*value = ""
 		}
+		app.saveInterfaceSettings()
 	}
 }
 
@@ -183,6 +177,7 @@ func (app *workbench) fontSizePreference(c *ui.Context, label string, value *flo
 			size, _ := strconv.ParseFloat(selected, 32)
 			*value = float32(size)
 		}
+		app.saveInterfaceSettings()
 	}
 }
 
@@ -195,6 +190,7 @@ func (app *workbench) saveInterfaceSettings() {
 		settings.StartupMode = "normal"
 	}
 	app.interfaceSaving = true
+	app.interfaceSaveFailed = false
 	app.preferenceRevision++
 	revision := app.preferenceRevision
 	go func() {
@@ -203,16 +199,24 @@ func (app *workbench) saveInterfaceSettings() {
 			if app.shuttingDown || app.preferences != store {
 				return
 			}
-			app.interfaceSaving = false
-			if err != nil {
-				app.reportError("保存界面设置失败", err)
-			} else {
-				app.interfaceSettings, app.interfaceDraft = settings, settings
+			app.finishInterfaceSettingsSave(settings, err)
+			if err == nil {
 				app.syncTray()
-				app.status = app.localized("界面设置已保存。")
 			}
 			app.invalidateSettingsWindow()
 			app.window.Invalidate()
 		})
 	}()
+}
+
+func (app *workbench) finishInterfaceSettingsSave(settings preferences.InterfaceSettings, err error) {
+	app.interfaceSaving = false
+	app.interfaceSaveFailed = err != nil
+	if err != nil {
+		app.interfaceDraft = app.interfaceSettings
+		app.reportError("保存界面设置失败", err)
+		return
+	}
+	app.interfaceSettings, app.interfaceDraft = settings, settings
+	app.status = app.localized("界面设置已保存。")
 }

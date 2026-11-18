@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.5] - 2026-11-19
+
+- Simplify the update dialogs and add space before the version message.
+- Save interface settings automatically and restore the last saved values if a write fails.
+- Let users show and hide saved connection passwords without changing the saved credential.
+
 ## [0.1.4] - 2026-11-18
 
 - Show the existing rounded-square application icon with more title spacing in the update dialog.

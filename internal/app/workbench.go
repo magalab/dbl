@@ -96,6 +96,7 @@ type workbench struct {
 	interfaceSettings            preferences.InterfaceSettings
 	interfaceDraft               preferences.InterfaceSettings
 	interfaceSaving              bool
+	interfaceSaveFailed          bool
 	fontFamilies                 []ui.FontFamily
 	shuttingDown                 bool
 	quitting                     bool
@@ -249,6 +250,9 @@ type workbench struct {
 	profileTLSCertPath           string
 	profileTLSKeyPath            string
 	profileSecretVisible         bool
+	profileSecretLoading         bool
+	profileSecretRequestID       uint64
+	profileSecretFromVault       bool
 	aiModelCache                 map[string][]string
 	aiModelsError                string
 	aiModelsLoading              bool

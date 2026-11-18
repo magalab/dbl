@@ -102,6 +102,21 @@ func updateInterval(hours int) time.Duration {
 	return time.Duration(hours) * time.Hour
 }
 
+func updateDialogStrings() map[string]updater.Strings {
+	return map[string]updater.Strings{
+		"en": {
+			UpToDateMessage:  "\nCurrent version: %[2]s%.0[1]s",
+			Available:        "A new version is available!%.0[1]s",
+			AvailableMessage: "\nVersion %[2]s is now available. You have %[3]s. Install it now?",
+		},
+		"zh-Hans": {
+			UpToDateMessage:  "\n当前版本：%[2]s%.0[1]s",
+			Available:        "有新版本可用！%.0[1]s",
+			AvailableMessage: "\n版本 %[2]s 现已推出，你当前的版本是 %[3]s。要现在安装吗？",
+		},
+	}
+}
+
 func validUpdateIntervalHours(hours int) bool {
 	switch hours {
 	case 1, 2, 6, 12, 24:

@@ -44,7 +44,11 @@ func (app *workbench) connectionProfileTestFingerprint() string {
 	profile.Environment = ""
 	profile.Favorite = false
 	profile.RedisDatabaseAliases = nil
-	value := fmt.Sprintf("%#v|%s|%s|%s", profile, app.profileSecret, app.profileTLSCertPath, app.profileTLSKeyPath)
+	secret := app.profileSecret
+	if app.profileSecretFromVault {
+		secret = ""
+	}
+	value := fmt.Sprintf("%#v|%s|%s|%s", profile, secret, app.profileTLSCertPath, app.profileTLSKeyPath)
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
 }
 
@@ -122,7 +126,7 @@ func (app *workbench) prepareConnectionProfileTest() (preferences.ConnectionProf
 		return ref, err
 	}
 
-	if app.profileSecret != "" {
+	if app.profileSecret != "" && !app.profileSecretFromVault {
 		ref, err := storeSecret([]byte(app.profileSecret))
 		if err != nil {
 			return profile, cleanup, fmt.Errorf("store temporary connection credential: %w", err)

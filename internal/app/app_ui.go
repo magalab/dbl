@@ -471,15 +471,22 @@ func (app *workbench) beginNewConnection() {
 	app.profileTLSMode = tlsModeLabel("disable")
 	app.profileDatabase, app.profileRedisDB, app.profileAuthSource = "", "0", ""
 	app.profileTLSCAPath, app.profileTLSCertPath, app.profileTLSKeyPath = "", "", ""
-	app.profileUsername, app.profileSecret, app.profileCredential = "", "", ""
-	app.profileSecretVisible = false
+	app.profileUsername, app.profileCredential = "", ""
+	app.resetProfileSecret()
 	app.removeCredential, app.profileReadOnly, app.profileFavorite = false, false, false
 	app.showConnectionEditor = true
 }
 
 func (app *workbench) discardConnectionEditorSecrets() {
-	app.profileSecret = ""
-	app.profileSecretVisible = false
+	app.resetProfileSecret()
 	app.profileTLSCertPath, app.profileTLSKeyPath = "", ""
 	app.removeCredential = false
+}
+
+func (app *workbench) resetProfileSecret() {
+	app.profileSecret = ""
+	app.profileSecretVisible = false
+	app.profileSecretLoading = false
+	app.profileSecretFromVault = false
+	app.profileSecretRequestID++
 }

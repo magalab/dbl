@@ -23,10 +23,7 @@ func Run() {
 		Interval:               updateInterval(workbench.updateIntervalHours),
 		DisableAutomaticChecks: true,
 		Icon:                   resources.MacOSIcon,
-		Strings: map[string]updater.Strings{
-			"en":      {UpToDateMessage: "\n%[1]s %[2]s is currently the newest version available."},
-			"zh-Hans": {UpToDateMessage: "\n%[1]s %[2]s 是目前可用的最新版本。"},
-		},
+		Strings:                updateDialogStrings(),
 	}))
 	mygo.App.SetMenu(mygo.NewMenu(appMenuItems(workbench, runtime.GOOS)))
 	mygo.App.WhenReady(func() {

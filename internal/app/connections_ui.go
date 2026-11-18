@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/magalab/dbl/internal/credentials"
 	"github.com/magalab/dbl/internal/databaseicons"
 	"github.com/magalab/dbl/internal/preferences"
 	"github.com/magalab/dbl/internal/sqlite"
@@ -271,6 +272,13 @@ func (app *workbench) openSavedProfile(profile preferences.ConnectionProfile) {
 	}
 }
 
+func (app *workbench) profileSecretPlaceholder() string {
+	if app.profileCredential != "" {
+		return "••••••••"
+	}
+	return app.localized("输入密码")
+}
+
 func (app *workbench) connectionProfileTextField(c *ui.Context, label, placeholder string, value *string, password bool, grow float32) {
 	field := ui.Column(c).MinWidth(0).Gap(4)
 	if grow > 0 {
@@ -284,7 +292,10 @@ func (app *workbench) connectionProfileTextField(c *ui.Context, label, placehold
 				if !app.profileSecretVisible {
 					input.Password()
 				}
-				input.Disabled(app.busy || app.exporting || app.dialogOpen)
+				input.Disabled(app.busy || app.exporting || app.dialogOpen || app.profileSecretLoading)
+				if input.Changed() {
+					app.profileSecretFromVault = false
+				}
 				label := "显示密码"
 				icon := actionIcons["eye"]
 				if app.profileSecretVisible {
@@ -292,9 +303,9 @@ func (app *workbench) connectionProfileTextField(c *ui.Context, label, placehold
 					icon = actionIcons["eyeOff"]
 				}
 				toggle := iconButton(c, app.localized(label), icon).Size(26, 26).Padding(3).Background(ui.Color{}).BorderWidth(0).TextColor(c.Theme().TextMuted)
-				toggle.Disabled(app.busy || app.exporting || app.dialogOpen)
+				toggle.Disabled(app.busy || app.exporting || app.dialogOpen || app.profileSecretLoading)
 				if toggle.Clicked() {
-					app.profileSecretVisible = !app.profileSecretVisible
+					app.toggleProfileSecretVisibility()
 				}
 			})
 			return
@@ -302,6 +313,54 @@ func (app *workbench) connectionProfileTextField(c *ui.Context, label, placehold
 		input := ui.TextInput(c, value).FillWidth().Placeholder(app.localized(placeholder)).Label(app.localized(label))
 		input.Disabled(app.busy || app.exporting || app.dialogOpen)
 	})
+}
+
+func (app *workbench) toggleProfileSecretVisibility() {
+	if app.profileSecretVisible {
+		if app.profileSecretFromVault {
+			app.resetProfileSecret()
+		} else {
+			app.profileSecretVisible = false
+		}
+		return
+	}
+	if app.profileSecret != "" || app.profileCredential == "" {
+		app.profileSecretVisible = true
+		return
+	}
+	if app.profileSecretLoading {
+		return
+	}
+	if app.vault == nil || app.window == nil {
+		app.reportError("读取已保存密码失败", credentials.ErrUnavailable)
+		return
+	}
+	credentialRef := app.profileCredential
+	vault, window := app.vault, app.window
+	app.profileSecretLoading = true
+	app.profileSecretRequestID++
+	requestID := app.profileSecretRequestID
+	go func() {
+		secret, err := vault.Load(credentials.Reference(credentialRef))
+		window.Update(func() {
+			app.finishProfileSecretRead(requestID, secret, err)
+		})
+	}()
+}
+
+func (app *workbench) finishProfileSecretRead(requestID uint64, secret []byte, err error) {
+	defer clear(secret)
+	if requestID != app.profileSecretRequestID || !app.profileSecretLoading || !app.showConnectionEditor || app.shuttingDown {
+		return
+	}
+	app.profileSecretLoading = false
+	if err != nil {
+		app.reportError("读取已保存密码失败", err)
+		return
+	}
+	app.profileSecret = string(secret)
+	app.profileSecretFromVault = true
+	app.profileSecretVisible = true
 }
 
 func (app *workbench) connectionProfileSelectField(c *ui.Context, label string, value *string, options []string, grow float32) {
@@ -327,13 +386,13 @@ func (app *workbench) changeConnectionProfileDriver(driver string) {
 	app.profileRedisAliases = nil
 	app.profileUsername, app.profileAuthSource = "", ""
 	app.profileTLSCAPath, app.profileTLSCertPath, app.profileTLSKeyPath = "", "", ""
-	app.profileSecretVisible = false
+	app.resetProfileSecret()
 	if driver == preferences.DriverSQLite {
 		app.profileTLSMode = ""
 	} else {
 		app.profileTLSMode = tlsModeLabel("disable")
 	}
-	app.profileCredential, app.profileSecret = "", ""
+	app.profileCredential = ""
 	app.removeCredential = false
 }
 
@@ -436,10 +495,10 @@ func (app *workbench) connectionProfileForm(c *ui.Context) {
 
 		ui.Row(c).FillWidth().Gap(12).Children(func() {
 			app.connectionProfileTextField(c, "用户名", "用户名", &app.profileUsername, false, 1)
-			app.connectionProfileTextField(c, "密码（留空则保留已保存密码）", "不会写入配置文件", &app.profileSecret, true, 1)
+			app.connectionProfileTextField(c, "密码", app.profileSecretPlaceholder(), &app.profileSecret, true, 1)
 		})
 		if app.profileCredential != "" {
-			ui.Text(c, app.localized("本机加密凭据库中已有密码")).TextColor(c.Theme().TextMuted)
+			ui.Text(c, app.localized("本机加密凭据库中已有密码；留空则保留。")).TextColor(c.Theme().TextMuted)
 			remove := ui.Checkbox(c, &app.removeCredential, app.localized("保存时移除已保存密码"))
 			remove.Disabled(disabled)
 		}

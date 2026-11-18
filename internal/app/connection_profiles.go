@@ -62,8 +62,7 @@ func (app *workbench) loadConnectionProfile(profile preferences.ConnectionProfil
 	app.profileTLSCertPath, app.profileTLSKeyPath = "", ""
 	app.profileUsername = profile.Username
 	app.profileCredential = profile.CredentialRef
-	app.profileSecret = ""
-	app.profileSecretVisible = false
+	app.resetProfileSecret()
 	app.removeCredential = false
 	app.readOnlyMode = profile.ReadOnly
 }
@@ -266,9 +265,11 @@ func (app *workbench) saveConnectionProfile(connectAfterSave bool) {
 		app.reportError("保存连接配置失败", err)
 		return
 	}
-	secret := []byte(app.profileSecret)
-	app.profileSecret = ""
-	app.profileSecretVisible = false
+	var secret []byte
+	if !app.profileSecretFromVault {
+		secret = []byte(app.profileSecret)
+	}
+	app.resetProfileSecret()
 	app.preferenceRevision++
 	revision := app.preferenceRevision
 	store := app.preferences
@@ -373,10 +374,7 @@ func (app *workbench) saveConnectionProfile(connectAfterSave bool) {
 			app.selectedProfileID = saved.ID
 			app.profileCredential = saved.CredentialRef
 			app.showConnectionEditor = false
-			app.profileSecret = ""
-			app.profileSecretVisible = false
-			app.profileTLSCertPath, app.profileTLSKeyPath = "", ""
-			app.removeCredential = false
+			app.discardConnectionEditorSecrets()
 			if cleanupErr != nil {
 				app.reportError("连接已保存，但旧凭据未能清理", cleanupErr)
 				return
@@ -428,6 +426,7 @@ func (app *workbench) deleteConnectionProfile(id string) {
 			}
 			app.connectionProfiles = settings.ConnectionProfiles
 			if app.selectedProfileID == id {
+				app.discardConnectionEditorSecrets()
 				app.selectedProfileID = ""
 				app.profileName = ""
 				app.profileGroup = ""

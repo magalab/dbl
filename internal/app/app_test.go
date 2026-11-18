@@ -196,7 +196,7 @@ func TestEtcdProfileShowsTLSAndCredentialControls(t *testing.T) {
 	tester.Frame()
 	for _, label := range []string{
 		"主机", "TLS 模式", "自定义 CA（可选，PEM 文件路径）", "本机凭据库已有客户端证书", "本机凭据库已有客户端私钥",
-		"用户名", "密码（留空则保留已保存密码）", "测试连接", "保存并连接",
+		"用户名", "密码", "测试连接", "保存并连接",
 		"etcd 使用用户名/密码认证；endpoint scheme 决定 HTTP 或 HTTPS。HTTPS 使用系统根证书和可选自定义 CA，也可配置 vault 中的 mTLS 客户端证书/私钥。",
 	} {
 		if !tester.HasText(label) {
@@ -857,7 +857,7 @@ func TestRemoteConnectionProfileControlsAreAccessibleAndHideCredentialReferences
 	}}
 	tester := ui.NewTester(app.view, 1440, 900)
 
-	for _, name := range []string{"数据库类型", "主机", "端口", "数据库", "用户名", "密码（留空则保留已保存密码）", "连接名称", "分组"} {
+	for _, name := range []string{"数据库类型", "主机", "端口", "数据库", "用户名", "密码", "连接名称", "分组"} {
 		if _, found := tester.Find(name); !found {
 			t.Errorf("accessible remote-profile control %q was not found", name)
 		}
@@ -1015,7 +1015,7 @@ func TestRedisProfileCanTestConnectAndExplainsTLS(t *testing.T) {
 		ID: "redis-1", Name: "Cache", Driver: preferences.DriverRedis, Host: "cache.example.test", Port: 6379,
 	}}
 	tester := ui.NewTester(app.view, 1440, 900)
-	for _, name := range []string{"Redis DB 索引", "主机", "端口", "用户名", "密码（留空则保留已保存密码）", "测试连接", "保存并连接"} {
+	for _, name := range []string{"Redis DB 索引", "主机", "端口", "用户名", "密码", "测试连接", "保存并连接"} {
 		if !tester.HasText(name) {
 			t.Errorf("Redis profile UI is missing %q", name)
 		}
@@ -1035,7 +1035,7 @@ func TestMongoProfileCanTestAndConnect(t *testing.T) {
 	app.profileTLSMode = tlsModeLabel("verify-full")
 	app.connectionProfiles = []preferences.ConnectionProfile{{ID: "mongo-1", Name: "Catalog", Driver: preferences.DriverMongoDB, Host: "mongo.example.test", Port: 27017, Database: "catalog", AuthSource: "admin", Username: "reader"}}
 	tester := ui.NewTester(app.view, 1440, 900)
-	for _, label := range []string{"数据库", "自定义 CA（可选，PEM 文件路径；追加到系统根证书）", "认证数据库", "用户名", "密码（留空则保留已保存密码）", "测试连接", "保存并连接"} {
+	for _, label := range []string{"数据库", "自定义 CA（可选，PEM 文件路径；追加到系统根证书）", "认证数据库", "用户名", "密码", "测试连接", "保存并连接"} {
 		if !tester.HasText(label) {
 			t.Errorf("MongoDB profile UI is missing %q", label)
 		}
