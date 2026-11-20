@@ -187,6 +187,7 @@ func (window *Window) SourceRow(index int) int64 {
 // the remaining result has been read.
 type Cursor struct {
 	mu        sync.Mutex
+	ctx       context.Context
 	rows      *sql.Rows
 	columns   []Column
 	rowsRead  int64
@@ -220,7 +221,7 @@ func Open(ctx context.Context, db QueryerContext, statement string) (*Cursor, er
 			}
 		}
 	}
-	return &Cursor{rows: rows, columns: columns}, nil
+	return &Cursor{ctx: ctx, rows: rows, columns: columns}, nil
 }
 
 func (cursor *Cursor) Columns() []Column {
@@ -284,6 +285,12 @@ func (cursor *Cursor) NextBatch(batchSize int) (rows [][]any, done bool, err err
 	defer cursor.mu.Unlock()
 	if cursor.done || cursor.rows == nil {
 		return nil, true, nil
+	}
+	if cursor.ctx != nil {
+		if err := cursor.ctx.Err(); err != nil {
+			_ = cursor.finishLocked(false)
+			return nil, true, err
+		}
 	}
 	if batchSize <= 0 {
 		batchSize = DefaultBatchSize
