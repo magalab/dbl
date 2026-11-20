@@ -40,6 +40,8 @@ func (app *workbench) syncTray() {
 		app.reportError("创建系统托盘失败", err)
 		return
 	}
+	// On Windows, MyGo dispatches left clicks separately from the right-click menu.
+	tray.OnClick(app.showMainWindow)
 	app.tray = tray
 }
 
@@ -48,5 +50,6 @@ func (app *workbench) showMainWindow() {
 		return
 	}
 	app.window.Show()
+	app.window.Restore()
 	app.window.Focus()
 }

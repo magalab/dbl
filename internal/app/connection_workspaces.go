@@ -11,6 +11,7 @@ func (app *workbench) openRedisWorkspace(connectionID string) {
 	if connectionID == "" {
 		return
 	}
+	app.redisOverview = false
 	app.cancelRedisDeleteConfirmation()
 	index := -1
 	for i, workspace := range app.workspaces {
@@ -53,6 +54,8 @@ func connectionViewAvailable(app *workbench, workspace *queryWorkspace) bool {
 		return false
 	}
 	switch workspace.connectionDriver {
+	case connection.DriverPostgreSQL, connection.DriverMySQL:
+		return app.store != nil
 	case connection.DriverRedis:
 		return app.keyStore != nil
 	case connection.DriverMongoDB:
@@ -92,9 +95,30 @@ func (app *workbench) openConnectionView(connectionID string) {
 		app.workspaces = append(app.workspaces, workspace)
 		index = len(app.workspaces) - 1
 	}
+	if live.profile.ID != "" {
+		*app.connectionTreeState("profile:"+live.profile.ID, true) = true
+	}
+	namespace := app.sqlNamespace
+	if namespace == "" {
+		namespace = live.tree.namespace
+	}
+	switch live.connection.Driver() {
+	case connection.DriverPostgreSQL:
+		*app.connectionTreeState("pg-db:"+connectionID, true) = true
+		if namespace != "" {
+			*app.connectionTreeState("namespace:"+connectionID+":"+namespace, true) = true
+		}
+	case connection.DriverMySQL:
+		if namespace != "" {
+			*app.connectionTreeState("namespace:"+connectionID+":"+namespace, true) = true
+		}
+	}
 	app.queryWorkspaceRequested = true
 	app.activeWorkspace = index
 	app.activeQuery = app.workspaces[index]
+	if (live.connection.Driver() == connection.DriverPostgreSQL || live.connection.Driver() == connection.DriverMySQL) && app.activeQuery.connectionViewNamespace == "" {
+		app.activeQuery.connectionViewNamespace = namespace
+	}
 }
 
 func (app *workbench) saveRedisWorkspaceState(workspace *queryWorkspace) {

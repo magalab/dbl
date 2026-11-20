@@ -14,6 +14,14 @@ import (
 	"github.com/magalab/dbl/internal/sqlstream"
 )
 
+type pinnedDataResultScroll struct {
+	header ui.ScrollState
+	footer ui.ScrollState
+	rows   map[int]*ui.ScrollState
+	synced float32
+	page   int
+}
+
 func (app *workbench) resultTable(c *ui.Context) {
 	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
 		if !app.activeQuery.dataView {
@@ -88,15 +96,17 @@ func (app *workbench) resultTable(c *ui.Context) {
 			return
 		}
 		columns := make([]ui.TableColumn, 0, len(app.activeQuery.columns)+1)
-		rowNumberDigits := len(strconv.FormatInt(max(app.activeQuery.resultWindow.Total, int64(1)), 10))
-		rowNumberWidth := float32(max(44, 16+rowNumberDigits*10))
-		columns = append(columns, ui.TableColumn{ID: "row-number", Title: "#", Width: rowNumberWidth, Fixed: true, RowHeader: true})
+		columns = append(columns, ui.TableColumn{ID: "row-number", Title: "#", Width: 48, Fixed: true, RowHeader: true})
 		for i, column := range app.activeQuery.columns {
+			headerWidth, _ := c.MeasureText(0, ui.Span{
+				Text: column.Name, Font: c.Theme().Font, Size: c.Theme().FontSize, Weight: 600,
+			})
+			minWidth := max(float32(88), headerWidth+30) // Include cell padding and the sort indicator.
 			width := float32(160)
 			if app.activeQuery.dataView {
 				width = 0 // Share the available table width, like a spreadsheet grid.
 			}
-			columns = append(columns, ui.TableColumn{ID: strconv.Itoa(i), Title: column.Name, Width: width, Sortable: true})
+			columns = append(columns, ui.TableColumn{ID: strconv.Itoa(i), Title: column.Name, Width: width, MinWidth: minWidth, Sortable: true})
 		}
 		app.updateResultOrder()
 		rowCount := app.activeQuery.resultWindow.Len()
@@ -131,10 +141,8 @@ func (app *workbench) resultTable(c *ui.Context) {
 			pageStart = app.activeQuery.resultPage * pageSize
 			pageEnd = min(pageStart+pageSize, rowCount)
 		}
+		columns[0].Width = app.resultRowNumberColumnWidth(c, pageStart, pageEnd)
 		app.activeQuery.resultList.Sort = &app.activeQuery.resultSort
-		app.activeQuery.resultList.HeaderMenu = func(menu *ui.Menu, _ int) {
-			app.addResultExportMenu(menu, app.activeQuery)
-		}
 		if app.activeQuery.dataView {
 			app.activeQuery.resultList.Selected = &app.activeQuery.dataSelectedRow
 		} else {
@@ -177,7 +185,7 @@ func (app *workbench) resultTable(c *ui.Context) {
 		if insertRowVisible {
 			tableRows++
 		}
-		ui.Table(c, &app.activeQuery.resultList, columns, tableRows, func(row, col int) {
+		renderCell := func(row, col int) {
 			pageRowCount := pageEnd - pageStart
 			if insertRowVisible && row == pageRowCount {
 				app.dataInsertCell(c, app.activeQuery, col)
@@ -186,14 +194,14 @@ func (app *workbench) resultTable(c *ui.Context) {
 			displayRow := row + pageStart
 			sourceRow := app.resultSourceIndex(displayRow)
 			if col == 0 {
-				ui.Text(c, strconv.FormatInt(app.activeQuery.resultWindow.SourceRow(sourceRow)+1, 10)).SingleLine()
+				ui.Text(c, strconv.FormatInt(app.activeQuery.resultWindow.SourceRow(sourceRow)+1, 10)).SingleLine().Padding(0, 8).Grow(1).TextAlign(ui.Center)
 				return
 			}
 			dataColumn := col - 1
 			values := make([]string, len(app.activeQuery.columns))
 			for i, value := range app.activeQuery.resultWindow.Row(sourceRow) {
 				if i < len(values) {
-					values[i] = formatCell(value, app.activeQuery.columns[i].DatabaseType)
+					values[i] = formatCell(value, resultColumnDatabaseType(app.activeQuery, i))
 				}
 			}
 			cellText := values[dataColumn]
@@ -209,11 +217,11 @@ func (app *workbench) resultTable(c *ui.Context) {
 				if change := findDataRowChange(app.activeQuery, dataRowID); change != nil && change.kind == connection.DeleteRow {
 					cellText = "「" + cellText + "」 · " + app.localized("待删除")
 				} else {
-					cellText = formatCell(shown, app.activeQuery.columns[dataColumn].DatabaseType)
+					cellText = formatCell(shown, resultColumnDatabaseType(app.activeQuery, dataColumn))
 				}
 				if app.activeQuery.dataCellEditing && app.activeQuery.dataEditSourceRow == dataRowID && app.activeQuery.dataEditColumn == dataColumn {
 					workspace := app.activeQuery
-					input := ui.TextInput(c, &workspace.dataEditDraft).Label(app.activeQuery.columns[dataColumn].Name)
+					input := ui.TextInput(c, &workspace.dataEditDraft).FillWidth().Label(app.activeQuery.columns[dataColumn].Name)
 					input.Disabled(!app.canEditDataWorkspace(app.activeQuery) || app.activeQuery.dataEditNull)
 					cell = input.OnShortcut(0, ui.KeyEscape, func() {
 						app.cancelDataCellEdit(workspace)
@@ -221,7 +229,7 @@ func (app *workbench) resultTable(c *ui.Context) {
 				} else {
 					columnInfo, hasColumnInfo := dataColumnInfoForResult(app.activeQuery, dataColumn)
 					rowHasKey := dataRowHasPrimaryKeyValues(app.activeQuery, app.activeQuery.resultWindow.Row(sourceRow))
-					editButton := ui.Button(c, cellText).Background(ui.Color{}).BorderWidth(0).Padding(4, 6).TextColor(c.Theme().Text)
+					editButton := ui.Button(c, cellText).FillWidth().SingleLine().Background(ui.Color{}).BorderWidth(0).Padding(4, 6).TextColor(c.Theme().Text)
 					editButton.Disabled(!app.canEditDataWorkspace(app.activeQuery) || !rowHasKey || !hasColumnInfo || !dataColumnEditable(columnInfo))
 					editButton.Tooltip(app.localized("点击单元格即可暂存修改"))
 					if editButton.Clicked() {
@@ -257,13 +265,187 @@ func (app *workbench) resultTable(c *ui.Context) {
 				menu.Separator()
 				menu.EditItems()
 			})
-		}).Grow(1).Label(app.localized("查询结果"))
+		}
+		app.pinnedResultTable(c, app.activeQuery, columns, tableRows, renderCell)
 		if app.activeQuery.dataView {
 			app.dataWorkspaceResultFooter(c, app.activeQuery, rowCount, pageStart, pageEnd, pageCount)
 		} else {
 			app.sqlResultFooter(c, app.activeQuery, rowCount, pageStart, pageEnd, pageCount)
 		}
 	})
+}
+
+func (app *workbench) resultRowNumberColumnWidth(c *ui.Context, pageStart, pageEnd int) float32 {
+	theme := c.Theme()
+	headerWidth, _ := c.MeasureText(0, ui.Span{
+		Text: "#", Font: theme.Font, Size: theme.FontSize, Weight: 600,
+	})
+	maxOrdinal := int64(1)
+	for row := pageStart; row < pageEnd; row++ {
+		sourceRow := app.resultSourceIndex(row)
+		maxOrdinal = max(maxOrdinal, app.activeQuery.resultWindow.SourceRow(sourceRow)+1)
+	}
+	digitCount := len(strconv.FormatInt(maxOrdinal, 10))
+	numberWidth, _ := c.MeasureText(0, ui.Span{Text: strings.Repeat("8", digitCount), Font: theme.Font, Size: theme.FontSize})
+	contentWidth := max(headerWidth, numberWidth)
+	const horizontalPadding = float32(8)
+	return max(float32(48), contentWidth+horizontalPadding*2)
+}
+
+func (app *workbench) pinnedResultTable(c *ui.Context, workspace *queryWorkspace, columns []ui.TableColumn, rowCount int, renderCell func(row, column int)) {
+	if workspace == nil || len(columns) == 0 {
+		return
+	}
+	syncDataResultHorizontalScroll(workspace)
+	const rowHeight = float32(32)
+	rowNumberWidth := columns[0].Width
+	order := dataResultColumnOrder(workspace, columns)
+	widths := make(map[int]float32, len(order))
+	var contentWidth float32
+	for _, index := range order {
+		width := dataResultColumnWidth(workspace, columns[index])
+		widths[index] = width
+		contentWidth += width + 1
+	}
+	theme := c.Theme()
+	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
+		ui.Row(c).FillWidth().Height(rowHeight).Gap(0).AlignItems(ui.Stretch).Background(theme.Surface).Children(func() {
+			ui.Row(c).Width(rowNumberWidth).Shrink(0).AlignItems(ui.Center).Role(ui.RoleColumnHeader).Children(func() {
+				ui.Text(c, "#").Padding(4, 8).Grow(1).SingleLine().TextAlign(ui.Center).Role(ui.RoleColumnHeader)
+				ui.Box(c).Width(1).FillHeight().Background(theme.Border)
+			})
+			header := ui.ScrollHorizontal(c).Grow(1).MinWidth(0).TrackScroll(&workspace.resultGridScroll.header).Scrollbars(false)
+			header.Children(func() {
+				ui.Row(c).Height(rowHeight).Shrink(0).AlignItems(ui.Stretch).Children(func() {
+					for _, index := range order {
+						column := columns[index]
+						label := column.Title
+						if workspace.resultSort.Column == column.ID {
+							if workspace.resultSort.Descending {
+								label += " ↓"
+							} else {
+								label += " ↑"
+							}
+						}
+						width := widths[index]
+						ui.Row(c).Width(width).MinWidth(width).MaxWidth(width).Shrink(0).AlignItems(ui.Center).Role(ui.RoleColumnHeader).Children(func() {
+							button := ui.Button(c, label).FillWidth().SingleLine().Background(ui.Color{}).BorderWidth(0).Padding(4, 6).
+								TextColor(theme.TextMuted).Tooltip(column.Title)
+							button.ContextMenu(func(menu *ui.Menu) {
+								app.addResultExportMenu(menu, workspace)
+							})
+							if button.Clicked() {
+								if workspace.resultSort.Column == column.ID {
+									workspace.resultSort.Descending = !workspace.resultSort.Descending
+								} else {
+									workspace.resultSort = ui.SortOrder{Column: column.ID}
+								}
+								workspace.resultList.Sort = &workspace.resultSort
+							}
+						})
+						ui.Box(c).Width(1).FillHeight().Background(theme.Border)
+					}
+				})
+			})
+		})
+		ui.Box(c).FillWidth().Height(1).Background(theme.Border)
+		ui.List(c, &workspace.resultList, rowCount, func(row int) {
+			ui.Row(c).FillWidth().MinHeight(rowHeight).Gap(0).AlignItems(ui.Stretch).Children(func() {
+				ui.Row(c).Width(rowNumberWidth).MinWidth(rowNumberWidth).MaxWidth(rowNumberWidth).Shrink(0).AlignItems(ui.Center).Role(ui.RoleRowHeader).Children(func() {
+					renderCell(row, 0)
+					ui.Box(c).Width(1).FillHeight().Background(theme.Border)
+				})
+				rowScroll := workspace.resultGridScroll.rows[row]
+				if rowScroll == nil {
+					rowScroll = &ui.ScrollState{X: workspace.resultGridScroll.synced}
+					workspace.resultGridScroll.rows[row] = rowScroll
+				}
+				rowContent := ui.ScrollHorizontal(c).Grow(1).MinWidth(0).TrackScroll(rowScroll).Scrollbars(false)
+				rowContent.Children(func() {
+					ui.Row(c).Height(rowHeight).Shrink(0).AlignItems(ui.Stretch).Children(func() {
+						for _, index := range order {
+							width := widths[index]
+							ui.Row(c).Width(width).MinWidth(width).MaxWidth(width).Shrink(0).Clip().Padding(0, 2).AlignItems(ui.Center).Children(func() {
+								renderCell(row, index)
+							})
+							ui.Box(c).Width(1).FillHeight().Background(theme.Border)
+						}
+					})
+				})
+			})
+		}).Grow(1).Label(app.localized("查询结果"))
+		ui.Row(c).FillWidth().Height(12).Gap(0).AlignItems(ui.Stretch).Children(func() {
+			ui.Box(c).Width(rowNumberWidth).Shrink(0).Background(theme.Surface)
+			if contentWidth > 0 {
+				bar := ui.ScrollHorizontal(c).Grow(1).TrackScroll(&workspace.resultGridScroll.footer).KeepScrollbars(true)
+				bar.Children(func() {
+					ui.Box(c).Width(contentWidth).Height(1).Shrink(0)
+				})
+			}
+		})
+	})
+}
+
+func syncDataResultHorizontalScroll(workspace *queryWorkspace) {
+	if workspace.resultGridScroll.page != workspace.dataPage {
+		workspace.resultGridScroll.rows = nil
+		workspace.resultGridScroll.page = workspace.dataPage
+	}
+	if workspace.resultGridScroll.rows == nil {
+		workspace.resultGridScroll.rows = make(map[int]*ui.ScrollState)
+	}
+	states := make([]*ui.ScrollState, 0, len(workspace.resultGridScroll.rows)+2)
+	states = append(states, &workspace.resultGridScroll.header, &workspace.resultGridScroll.footer)
+	for _, state := range workspace.resultGridScroll.rows {
+		if state != nil {
+			states = append(states, state)
+		}
+	}
+	x := workspace.resultGridScroll.synced
+	for _, state := range states {
+		if state.X != workspace.resultGridScroll.synced {
+			x = state.X
+			break
+		}
+	}
+	for _, state := range states {
+		state.X = x
+	}
+	workspace.resultGridScroll.synced = x
+}
+
+func dataResultColumnOrder(workspace *queryWorkspace, columns []ui.TableColumn) []int {
+	indexes := make(map[string]int, len(columns))
+	for index, column := range columns {
+		if index > 0 {
+			indexes[column.ID] = index
+		}
+	}
+	order := make([]int, 0, len(indexes))
+	seen := make(map[int]bool, len(indexes))
+	for _, id := range workspace.resultList.Columns.Order {
+		if index, ok := indexes[id]; ok && !seen[index] {
+			order = append(order, index)
+			seen[index] = true
+		}
+	}
+	for index := 1; index < len(columns); index++ {
+		if !seen[index] {
+			order = append(order, index)
+		}
+	}
+	return order
+}
+
+func dataResultColumnWidth(workspace *queryWorkspace, column ui.TableColumn) float32 {
+	width := max(float32(160), column.MinWidth)
+	if column.Width > 0 {
+		width = max(width, column.Width)
+	}
+	if saved, ok := workspace.resultList.Columns.Widths[column.ID]; ok {
+		width = max(column.MinWidth, saved)
+	}
+	return width
 }
 
 func (app *workbench) sqlResultFooter(c *ui.Context, workspace *queryWorkspace, retainedRows, pageStart, pageEnd, pageCount int) {
@@ -306,8 +488,8 @@ func (app *workbench) resultFooterDuration(c *ui.Context, workspace *queryWorksp
 			continue
 		}
 		duration := record.Duration
-		if app.activeQuery == workspace && app.cursor != nil {
-			duration = time.Since(record.Started)
+		if app.activeQuery == workspace && !workspace.resultPageReadStarted.IsZero() {
+			duration += time.Since(workspace.resultPageReadStarted)
 		}
 		ui.Text(c, "·").TextColor(c.Theme().TextMuted).SingleLine()
 		ui.Text(c, duration.Round(time.Millisecond).String()).TextColor(c.Theme().TextMuted).SingleLine()
@@ -439,15 +621,24 @@ func (app *workbench) resultPaginationControls(c *ui.Context, workspace *queryWo
 		Padding(4, 6).
 		Placeholder(app.localized("页码")).
 		Label(app.localized("跳转到页码")).
-		Tooltip(app.localized("输入页码后按回车跳转；可跳转到已读取的页。"))
+		Tooltip(app.localized("输入页码后按回车跳转；未读取的页会按顺序加载，最多保留当前结果窗口。"))
 	target, err := strconv.Atoi(strings.TrimSpace(workspace.pageJumpInput))
-	valid := retainedRows > 0 && err == nil && target >= 1 && target <= pageCount
+	jumpPageLimit := pageCount
+	if streaming && workspace.resultWindow.Len() < maxDisplayedRows {
+		jumpPageLimit = max(jumpPageLimit, resultPageCount(maxDisplayedRows, resultWorkspacePageSize(workspace)))
+	}
+	valid := retainedRows > 0 && err == nil && target >= 1 && target <= jumpPageLimit
 	pageInput.Disabled(app.busy || app.dialogOpen || editingData)
 	pageInput.OnShortcut(0, ui.KeyEnter, func() {
 		if valid && !app.busy && !app.dialogOpen && !editingData {
-			*page = target - 1
-			if dataView {
-				workspace.dataSelectedRow = -1
+			targetPage := target - 1
+			if targetPage < pageCount {
+				*page = targetPage
+				if dataView {
+					workspace.dataSelectedRow = -1
+				}
+			} else if streaming {
+				app.fetchResultPage(targetPage)
 			}
 		}
 	})

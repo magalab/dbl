@@ -72,6 +72,26 @@ func dataColumnInfoForResult(workspace *queryWorkspace, resultColumn int) (conne
 	return connection.Column{}, false
 }
 
+func resultColumnDatabaseType(workspace *queryWorkspace, resultColumn int) string {
+	if workspace == nil || resultColumn < 0 {
+		return ""
+	}
+	if workspace.dataView {
+		if column, ok := dataColumnInfoForResult(workspace, resultColumn); ok && strings.TrimSpace(column.Type) != "" {
+			return column.Type
+		}
+		columns := dataWorkspaceResultColumns(workspace)
+		if resultColumn < len(columns) {
+			return columns[resultColumn].DatabaseType
+		}
+		return ""
+	}
+	if resultColumn < len(workspace.columns) {
+		return workspace.columns[resultColumn].DatabaseType
+	}
+	return ""
+}
+
 func dataColumnEditable(column connection.Column) bool {
 	if column.Hidden != 0 {
 		return false
@@ -265,7 +285,7 @@ func (app *workbench) beginDataCellEdit(workspace *queryWorkspace, sourceRow int
 	workspace.dataCellEditing = true
 	workspace.dataEditSourceRow = sourceRow
 	workspace.dataEditColumn = column
-	workspace.dataEditDraft = formatCell(value, "")
+	workspace.dataEditDraft = formatCell(value, resultColumnDatabaseType(workspace, column))
 	workspace.dataEditNull = value == nil
 	workspace.dataEditOriginal = nil
 	if sourceIndex >= 0 {
@@ -318,7 +338,7 @@ func (app *workbench) applyDataCellEdit(workspace *queryWorkspace) {
 	if workspace.dataEditNull {
 		value = nil
 	}
-	if sameDataValue(original, value) {
+	if sameDataValue(original, value, resultColumnDatabaseType(workspace, workspace.dataEditColumn)) {
 		delete(change.values, columns[workspace.dataEditColumn].Name)
 	} else {
 		change.values[columns[workspace.dataEditColumn].Name] = value
@@ -334,11 +354,11 @@ func (app *workbench) applyDataCellEdit(workspace *queryWorkspace) {
 	app.status = app.localized("单元格修改已暂存；提交前不会写入数据库。")
 }
 
-func sameDataValue(original, edited any) bool {
+func sameDataValue(original, edited any, databaseType string) bool {
 	if original == nil || edited == nil {
 		return original == nil && edited == nil
 	}
-	return formatCell(original, "") == formatCell(edited, "")
+	return formatCell(original, databaseType) == formatCell(edited, databaseType)
 }
 
 func removeDataRowChange(workspace *queryWorkspace, sourceRow int64) {

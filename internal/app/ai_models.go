@@ -53,9 +53,11 @@ func (app *workbench) fetchAIModels() {
 
 func (app *workbench) aiModelSelector(c *ui.Context) {
 	models := app.aiModelCache[app.aiModelCacheKey()]
-	ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-		ui.Autocomplete(c, &app.aiModel, models).Label(app.localized("模型名称")).Placeholder(app.localized("输入或选择模型")).Grow(1).MinWidth(0).Disabled(app.busy || app.aiRunning || app.exporting || app.dialogOpen)
-		app.aiModelFetchButton(c)
+	app.settingRow(c, "模型名称", func() {
+		ui.Row(c).Width(260).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Autocomplete(c, &app.aiModel, models).Label(app.localized("模型名称")).Placeholder(app.localized("输入或选择模型")).Grow(1).MinWidth(0).Disabled(app.busy || app.aiRunning || app.exporting || app.dialogOpen)
+			app.aiModelFetchButton(c)
+		})
 	})
 	if app.aiModelsError != "" {
 		ui.Text(c, app.aiModelsError).TextColor(c.Theme().TextMuted)
@@ -110,7 +112,7 @@ func (app *workbench) aiModelFetchButton(c *ui.Context) {
 	if app.aiModelsLoading {
 		label = "正在获取模型…"
 	}
-	fetch := ui.Button(c, app.localized(label))
+	fetch := iconButton(c, app.localized(label), actionIcons["refresh"]).Size(30, 30).Padding(4)
 	fetch.Disabled(app.busy || app.aiRunning || app.exporting || app.dialogOpen || app.aiRemoveKey || strings.TrimSpace(app.aiEndpoint) == "" || (app.aiAPIKey == "" && app.aiSettings.APIKeyRef == ""))
 	if fetch.Clicked() {
 		app.fetchAIModels()

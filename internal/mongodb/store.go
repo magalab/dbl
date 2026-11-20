@@ -200,6 +200,35 @@ func (s *Store) ClassifyError(err error) connection.ErrorKind {
 	return connection.ErrorUnknown
 }
 
+func (s *Store) MongoOverview(ctx context.Context) connection.MongoOverview {
+	var info connection.MongoOverview
+	if s.ensureOpen() != nil {
+		return info
+	}
+	admin := s.client.Database("admin")
+	var build struct {
+		Version string `bson:"version"`
+	}
+	if admin.RunCommand(ctx, bson.D{{Key: "buildInfo", Value: 1}}).Decode(&build) == nil {
+		info.Version = build.Version
+	}
+	var hello struct {
+		Message string `bson:"msg"`
+		SetName string `bson:"setName"`
+	}
+	if admin.RunCommand(ctx, bson.D{{Key: "hello", Value: 1}}).Decode(&hello) == nil {
+		switch {
+		case hello.Message == "isdbgrid":
+			info.Topology = "sharded"
+		case hello.SetName != "":
+			info.Topology = "replica"
+		default:
+			info.Topology = "standalone"
+		}
+	}
+	return info
+}
+
 func (s *Store) Databases(ctx context.Context) ([]string, error) {
 	if err := s.ensureOpen(); err != nil {
 		return nil, err

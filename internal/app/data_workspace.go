@@ -53,7 +53,7 @@ func (app *workbench) openDataWorkspaceMode(object connection.Object, forceNew b
 	if !forceNew {
 		for i, workspace := range app.workspaces {
 			if workspace.dataView && workspace.dataObject == object && workspace.dataConnectionID == app.openedConnectionID {
-				if i != app.activeWorkspace {
+				if i != app.activeWorkspace || app.sqliteOverview {
 					app.activateWorkspace(i)
 				}
 				return

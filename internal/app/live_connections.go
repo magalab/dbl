@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -27,24 +28,25 @@ func (app *workbench) registerLiveConnection(id string, conn connection.Connecti
 }
 
 func (app *workbench) activateLiveConnection(id string) bool {
-	return app.activateLiveConnectionMode(id, false)
+	return app.activateLiveConnectionMode(id, false, false)
 }
 
 func (app *workbench) activateLiveConnectionForWorkspace(id string) bool {
-	if app.openedConnectionID != id && app.activeQuery != nil && app.activeQuery.redisView {
-		app.saveRedisWorkspaceState(app.activeQuery)
-	}
-	return app.activateLiveConnectionMode(id, true)
+	return app.activateLiveConnectionMode(id, true, false)
 }
 
-func (app *workbench) activateLiveConnectionMode(id string, preserveWorkspace bool) bool {
+func (app *workbench) activateLiveConnectionMode(id string, preserveWorkspace, redisOverview bool) bool {
 	live, ok := app.liveConnections[id]
 	if !ok || live.connection == nil {
 		return false
 	}
 	if app.busy || app.exporting || app.dialogOpen {
-		return true
+		return false
 	}
+	if !app.redisOverview && app.activeQuery != nil && app.activeQuery.redisView && app.activeQuery.redisConnectionID == app.openedConnectionID {
+		app.saveRedisWorkspaceState(app.activeQuery)
+	}
+	app.redisOverview = redisOverview
 	if app.openedConnectionID == id && app.hasActiveConnection() {
 		return true
 	}
@@ -135,14 +137,14 @@ func (app *workbench) activateLiveConnectionMode(id string, preserveWorkspace bo
 		app.resetResultOrder()
 	}
 	app.status = app.localized("已切换到连接：") + live.profile.Name
-	app.loadLiveConnectionBasics(id, live.connection)
+	app.loadLiveConnectionBasics(id, live.connection, redisOverview)
 	if app.etcdStore != nil {
 		app.resetEtcdAdminState()
 		if app.etcdPendingSection != "" {
 			app.etcdSection = app.etcdPendingSection
 			app.etcdPendingSection = ""
 		} else if previousConnectionID != id || app.etcdSection == "" {
-			app.etcdSection = "keys"
+			app.etcdSection = "overview"
 		}
 		app.etcdToolbarSection = etcdToolbarSectionFor(app.etcdSection)
 		app.etcdSidebarSection = app.etcdSection
@@ -153,6 +155,7 @@ func (app *workbench) activateLiveConnectionMode(id string, preserveWorkspace bo
 }
 
 func (app *workbench) detachActiveConnectionContext() {
+	app.redisOverview = false
 	app.cancelRedisTTLRefresh()
 	app.store, app.keyStore, app.documentStore, app.etcdStore = nil, nil, nil, nil
 	app.etcdAdmin = nil
@@ -175,7 +178,8 @@ func (app *workbench) detachActiveConnectionContext() {
 	app.redisEntryFilter = ""
 }
 
-func (app *workbench) loadLiveConnectionBasics(id string, conn connection.Connection) {
+func (app *workbench) loadLiveConnectionBasics(id string, conn connection.Connection, redisOverview bool) {
+	needVersion := app.liveConnections[id].sqlVersion == ""
 	ctx, cancel := app.withTaskTimeout(10 * time.Second)
 	redisMatch := redisMatchPattern(app.redisMatch)
 	redisType := ""
@@ -204,9 +208,11 @@ func (app *workbench) loadLiveConnectionBasics(id string, conn connection.Connec
 		case connection.Documents:
 			mongoDBs, err = store.Databases(ctx)
 		case connection.KeyValue:
-			redisPage, err = store.ScanKeysByType(ctx, redisMatch, redisType, 0, 100)
-			if err == nil {
-				redisMetadata = inspectRedisKeyMetadata(ctx, store, redisPage.Keys)
+			if !redisOverview {
+				redisPage, err = store.ScanKeysByType(ctx, redisMatch, redisType, 0, 100)
+				if err == nil {
+					redisMetadata = inspectRedisKeyMetadata(ctx, store, redisPage.Keys)
+				}
 			}
 		}
 		app.window.Update(func() {
@@ -227,9 +233,14 @@ func (app *workbench) loadLiveConnectionBasics(id string, conn connection.Connec
 			live.treeLoaded = true
 			app.liveConnections[id] = live
 			app.sqlNamespaces, app.sqlNamespace, app.sqlNamespaceChoice = namespaces, namespace, namespace
-			if app.store != nil && len(namespaces) == 0 {
+			if app.openedDriver == connection.DriverSQLite && len(namespaces) == 0 {
 				app.sqlNamespaces = []string{"main"}
 				app.sqlNamespace, app.sqlNamespaceChoice = "main", "main"
+			}
+			if app.activeQuery != nil && app.activeQuery.connectionView && app.activeQuery.connectionID == id &&
+				(app.activeQuery.connectionDriver == connection.DriverPostgreSQL || app.activeQuery.connectionDriver == connection.DriverMySQL) &&
+				app.activeQuery.connectionViewNamespace == "" {
+				app.activeQuery.connectionViewNamespace = app.sqlNamespace
 			}
 			if isSQLQueryWorkspace(app.activeQuery) && app.activeQuery.queryConnectionID == id && app.activeQuery.queryNamespace == "" {
 				app.activeQuery.queryNamespace = app.sqlNamespace
@@ -238,7 +249,7 @@ func (app *workbench) loadLiveConnectionBasics(id string, conn connection.Connec
 			// first database here can race with selectMongoDatabase and put another
 			// database's collections under the selected tree node.
 			app.mongoDatabases = mongoDBs
-			if app.activeQuery == nil || !app.activeQuery.redisView || app.activeQuery.redisConnectionID != id || !app.activeQuery.redisStateLoaded {
+			if !redisOverview && !app.redisOverview && (app.activeQuery == nil || !app.activeQuery.redisView || app.activeQuery.redisConnectionID != id || !app.activeQuery.redisStateLoaded) {
 				app.redisKeys, app.redisCursor, app.redisHasMore = redisPage.Keys, redisPage.NextCursor, redisPage.NextCursor != 0
 				app.replaceRedisKeyMetadata(redisMetadata)
 				app.redisKeySelection.Clear()
@@ -247,6 +258,20 @@ func (app *workbench) loadLiveConnectionBasics(id string, conn connection.Connec
 				}
 			}
 		})
+		if source, ok := conn.(connection.SQLVersion); needVersion && ok && err == nil {
+			versionCtx, stop := context.WithTimeout(ctx, 2*time.Second)
+			version, versionErr := source.SQLVersion(versionCtx)
+			stop()
+			if versionErr == nil && strings.TrimSpace(version) != "" {
+				app.window.Update(func() {
+					live, exists := app.liveConnections[id]
+					if exists && live.connection == conn {
+						live.sqlVersion = strings.TrimSpace(version)
+						app.liveConnections[id] = live
+					}
+				})
+			}
+		}
 	}()
 }
 

@@ -31,6 +31,10 @@ func (app *workbench) commitDataChanges(workspace *queryWorkspace, onSaved func(
 		return
 	}
 	connectionID := workspace.dataConnectionID
+	if app.skipTableChangeConfirmation {
+		app.applyDataChanges(workspace, editor, connectionID, changes, onSaved)
+		return
+	}
 	connectionLabel, driver, environment := app.openedLabel, app.openedDriver, app.localized(environmentLabel(app.openedEnvironment))
 	if live, exists := app.liveConnections[connectionID]; exists {
 		connectionLabel = live.profile.Name
@@ -182,7 +186,7 @@ func (app *workbench) dataChangesReview(workspace *queryWorkspace) string {
 			}
 			for index, column := range dataWorkspaceResultColumns(workspace) {
 				if index < len(change.original) && keySet[column.Name] {
-					parts = append(parts, column.Name+"="+truncateText(dataReviewValue(change.original[index]), 120))
+					parts = append(parts, column.Name+"="+truncateText(dataReviewValueForColumn(workspace, column.Name, change.original[index]), 120))
 				}
 			}
 		} else if change.kind == connection.UpdateRow {
@@ -193,7 +197,7 @@ func (app *workbench) dataChangesReview(workspace *queryWorkspace) string {
 			keyParts := make([]string, 0, len(keySet))
 			for columnIndex, column := range dataWorkspaceResultColumns(workspace) {
 				if columnIndex < len(change.original) && keySet[column.Name] {
-					keyParts = append(keyParts, column.Name+"="+truncateText(dataReviewValue(change.original[columnIndex]), 80))
+					keyParts = append(keyParts, column.Name+"="+truncateText(dataReviewValueForColumn(workspace, column.Name, change.original[columnIndex]), 80))
 				}
 			}
 			sort.Strings(keyParts)
@@ -202,15 +206,15 @@ func (app *workbench) dataChangesReview(workspace *queryWorkspace) string {
 				old := "?"
 				for columnIndex, column := range dataWorkspaceResultColumns(workspace) {
 					if column.Name == name && columnIndex < len(change.original) {
-						old = dataReviewValue(change.original[columnIndex])
+						old = dataReviewValueForColumn(workspace, name, change.original[columnIndex])
 						break
 					}
 				}
-				parts = append(parts, name+": "+truncateText(old, 80)+" → "+truncateText(dataReviewValue(value), 80))
+				parts = append(parts, name+": "+truncateText(old, 80)+" → "+truncateText(dataReviewValueForColumn(workspace, name, value), 80))
 			}
 		} else {
 			for name, value := range change.values {
-				parts = append(parts, name+"="+truncateText(dataReviewValue(value), 120))
+				parts = append(parts, name+"="+truncateText(dataReviewValueForColumn(workspace, name, value), 120))
 			}
 		}
 		sort.Strings(parts)
@@ -231,6 +235,23 @@ func dataReviewValue(value any) string {
 		return strconv.Quote(text)
 	}
 	return fmt.Sprint(value)
+}
+
+func dataReviewValueForColumn(workspace *queryWorkspace, name string, value any) string {
+	if _, ok := value.([]byte); !ok {
+		return dataReviewValue(value)
+	}
+	for index, column := range dataWorkspaceResultColumns(workspace) {
+		if column.Name != name {
+			continue
+		}
+		formatted := formatCell(value, resultColumnDatabaseType(workspace, index))
+		if strings.HasPrefix(formatted, "base64:") {
+			return formatted
+		}
+		return strconv.Quote(formatted)
+	}
+	return dataReviewValue(value)
 }
 
 func (app *workbench) confirmCloseDataWorkspace(index int, workspace *queryWorkspace) {

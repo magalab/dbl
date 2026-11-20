@@ -42,16 +42,12 @@ func (app *workbench) connectionTreeResources(c *ui.Context, rootDepth int) {
 		currentDB := app.currentRedisDB()
 		for database := 0; database < 16; database++ {
 			database := database
-			item := ui.TreeItem(c, treeIconPlaceholder+app.redisDatabaseLabel(database), nil, nil).Selected(database == currentDB).ContextMenu(func(menu *ui.Menu) {
+			item := ui.TreeItem(c, treeIconPlaceholder+app.redisDatabaseLabel(database), nil, nil).Selected(!app.redisOverview && database == currentDB).ContextMenu(func(menu *ui.Menu) {
 				app.redisDatabaseContextMenu(menu, database)
 			})
 			item = connectionTreeDecorations(c, item, "", "database", rootDepth+1, false, false)
 			if item.Clicked() {
-				if database != currentDB {
-					app.switchRedisDatabase(database)
-				} else {
-					app.openRedisWorkspace(app.openedConnectionID)
-				}
+				app.switchRedisDatabase(database)
 			}
 		}
 	case app.etcdStore != nil:
@@ -109,7 +105,7 @@ func (app *workbench) sqlConnectionTree(c *ui.Context, depth int) {
 			app.schemaContextMenu(menu, namespace)
 		})
 		item = connectionTreeDecorations(c, item, "", "schema", depth, false, false)
-		if item.Clicked() && namespace != app.sqlNamespace {
+		if item.Clicked() && (app.openedDriver == connection.DriverPostgreSQL || app.openedDriver == connection.DriverMySQL) {
 			app.switchSQLNamespace(namespace)
 		}
 	}
@@ -210,7 +206,7 @@ func (app *workbench) sqlObjectTreeItem(c *ui.Context, connectionID string, obje
 		if !app.activateLiveConnectionForWorkspace(connectionID) {
 			return
 		}
-		app.activateConnectionWorkspace(connectionID)
+		app.openConnectionView(connectionID)
 	}
 	app.inspectObject(object)
 	if isSQLTableOrView(object.Type) {
@@ -233,7 +229,7 @@ func (app *workbench) openRedisDatabaseForProfile(profile preferences.Connection
 		app.openRedisWorkspace(connectionID)
 		return
 	}
-	app.openRedis(profile)
+	app.openRedis(profile, true)
 }
 
 func (app *workbench) currentRedisDB() int {

@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -104,6 +105,15 @@ func (app *workbench) openSQLite(access sqlite.AccessMode) {
 				preferenceErr = preferenceStore.RememberSQLitePath(path, preferenceRevision)
 			}
 		}
+		var fileSize, version string
+		if err == nil {
+			if info, statErr := os.Stat(path); statErr == nil {
+				fileSize = formatIECBytes(info.Size())
+			}
+			if source, ok := store.(connection.SQLVersion); ok {
+				version, _ = source.SQLVersion(ctx)
+			}
+		}
 		app.window.Update(func() {
 			app.busy = false
 			app.finishWelcomeConnectionAttempt(openedProfileID, err)
@@ -112,7 +122,11 @@ func (app *workbench) openSQLite(access sqlite.AccessMode) {
 				return
 			}
 			profile := preferences.ConnectionProfile{ID: openedProfileID, Driver: preferences.DriverSQLite, Path: path, Name: path, Environment: openedEnvironment, ReadOnly: access == sqlite.ReadOnly}
-			app.registerLiveConnection("sqlite:"+path, store, profile)
+			id := "sqlite:" + path
+			app.registerLiveConnection(id, store, profile)
+			live := app.liveConnections[id]
+			live.sqliteFileSize, live.sqlVersion = fileSize, version
+			app.liveConnections[id] = live
 			app.store = store
 			app.sqlNamespaces = []string{"main"}
 			app.sqlNamespace, app.sqlNamespaceChoice = "main", "main"
@@ -151,7 +165,8 @@ func (app *workbench) openSQLite(access sqlite.AccessMode) {
 			if preferenceErr != nil {
 				app.reportError("已连接，但无法保存最近文件设置", preferenceErr)
 			}
-			app.activateConnectionWorkspace(app.openedConnectionID)
+			app.redisOverview = false
+			app.sqliteOverview = true
 		})
 	}()
 }
@@ -164,20 +179,50 @@ func (app *workbench) openPostgreSQL(profile preferences.ConnectionProfile) {
 	app.openPostgreSQLSchema(profile, schema)
 }
 
+func (app *workbench) openPostgreSQLConnectionInfo(profile preferences.ConnectionProfile) {
+	app.openPostgreSQLSchemaWithConnectionInfo(profile, "", true)
+}
+
 func (app *workbench) openPostgreSQLSchema(profile preferences.ConnectionProfile, schema string) {
-	app.openRemoteSQLProfile(profile, connection.DriverPostgreSQL, "PostgreSQL", postgresql.Connector{Profile: profile, Vault: app.vault, SearchPath: schema})
+	app.openPostgreSQLSchemaWithConnectionInfo(profile, schema, false)
+}
+
+func (app *workbench) openPostgreSQLSchemaWithConnectionInfo(profile preferences.ConnectionProfile, schema string, showConnectionInfo bool) {
+	app.openRemoteSQLProfile(profile, connection.DriverPostgreSQL, "PostgreSQL", postgresql.Connector{Profile: profile, Vault: app.vault, SearchPath: schema}, showConnectionInfo)
 }
 
 func (app *workbench) openMySQL(profile preferences.ConnectionProfile) {
-	if isSQLQueryWorkspace(app.activeQuery) && app.activeQuery.queryConnectionID == profileConnectionID(profile) && app.activeQuery.queryNamespace != "" {
+	app.openMySQLWithConnectionInfo(profile, false)
+}
+
+func (app *workbench) openMySQLConnectionInfo(profile preferences.ConnectionProfile) {
+	app.openMySQLWithConnectionInfo(profile, true)
+}
+
+func (app *workbench) openMySQLWithConnectionInfo(profile preferences.ConnectionProfile, showConnectionInfo bool) {
+	if !showConnectionInfo && isSQLQueryWorkspace(app.activeQuery) && app.activeQuery.queryConnectionID == profileConnectionID(profile) && app.activeQuery.queryNamespace != "" {
 		profile.Database = app.activeQuery.queryNamespace
 	}
-	app.openRemoteSQLProfile(profile, connection.DriverMySQL, "MySQL", mysqladapter.Connector{Profile: profile, Vault: app.vault})
+	app.openRemoteSQLProfile(profile, connection.DriverMySQL, "MySQL", mysqladapter.Connector{Profile: profile, Vault: app.vault}, showConnectionInfo)
 }
 
 func (app *workbench) switchSQLNamespace(namespace string) {
 	app.sqlNamespaceChoice = app.sqlNamespace
-	if app.busy || app.exporting || app.dialogOpen || app.store == nil || namespace == "" || namespace == app.sqlNamespace || !slices.Contains(app.sqlNamespaces, namespace) {
+	if app.busy || app.exporting || app.dialogOpen || app.store == nil || namespace == "" || !slices.Contains(app.sqlNamespaces, namespace) {
+		return
+	}
+	showConnectionInfo := app.activeQuery != nil && app.activeQuery.connectionView && app.activeQuery.connectionID == app.openedConnectionID
+	if showConnectionInfo {
+		app.activeQuery.connectionViewNamespace = namespace
+		if live, ok := app.liveConnections[app.openedConnectionID]; ok && live.profile.ID != "" {
+			*app.connectionTreeState("profile:"+live.profile.ID, true) = true
+		}
+		if app.openedDriver == connection.DriverPostgreSQL {
+			*app.connectionTreeState("pg-db:"+app.openedConnectionID, true) = true
+		}
+		*app.connectionTreeState("namespace:"+app.openedConnectionID+":"+namespace, true) = true
+	}
+	if namespace == app.sqlNamespace {
 		return
 	}
 	if !app.hasOpenedSQLProfile {
@@ -195,9 +240,9 @@ func (app *workbench) switchSQLNamespace(namespace string) {
 	}
 	switch app.openedDriver {
 	case connection.DriverPostgreSQL:
-		app.openPostgreSQLSchema(profile, schema)
+		app.openPostgreSQLSchemaWithConnectionInfo(profile, schema, showConnectionInfo)
 	case connection.DriverMySQL:
-		app.openMySQL(profile)
+		app.openMySQLWithConnectionInfo(profile, showConnectionInfo)
 	}
 }
 
@@ -220,7 +265,7 @@ func namespaceSelectorDisabled(current string, namespaces []string) bool {
 	return len(namespaces) == 0 || (len(namespaces) == 1 && current != "")
 }
 
-func (app *workbench) openRemoteSQLProfile(profile preferences.ConnectionProfile, driver connection.Driver, label string, connector connection.Connector) {
+func (app *workbench) openRemoteSQLProfile(profile preferences.ConnectionProfile, driver connection.Driver, label string, connector connection.Connector, showConnectionInfo bool) {
 	if app.busy || app.exporting || app.dialogOpen || connection.Driver(profile.Driver) != driver {
 		return
 	}
@@ -313,7 +358,7 @@ func (app *workbench) openRemoteSQLProfile(profile preferences.ConnectionProfile
 			app.openedLabel = profile.Name + " · " + profile.Host + "/" + profile.Database
 			app.openedEnvironment = profile.Environment
 			app.openedReadOnly = profile.ReadOnly
-			if app.canBindActiveQuery(app.openedConnectionID) {
+			if !showConnectionInfo && app.canBindActiveQuery(app.openedConnectionID) {
 				app.activeQuery.queryConnectionID = app.openedConnectionID
 				app.activeQuery.queryNamespace = namespace
 			}
@@ -322,7 +367,11 @@ func (app *workbench) openRemoteSQLProfile(profile preferences.ConnectionProfile
 			} else {
 				app.status = label + " 已连接。"
 			}
-			app.activateConnectionWorkspace(app.openedConnectionID)
+			if showConnectionInfo {
+				app.openConnectionView(app.openedConnectionID)
+			} else {
+				app.activateConnectionWorkspace(app.openedConnectionID)
+			}
 		})
 	}()
 }

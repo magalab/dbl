@@ -45,10 +45,12 @@ func (app *workbench) etcdDashboardWorkspace(c *ui.Context) {
 func (app *workbench) etcdDashboardSummary(c *ui.Context) {
 	dashboard := app.etcdDashboard
 	reachable := 0
-	leader := "—"
+	leader, size := "—", "—"
+	var maxSize int64
 	var version string
 	for _, member := range dashboard.Members {
 		if member.Reachable {
+			maxSize = max(maxSize, member.BackendSize)
 			reachable++
 			if version == "" {
 				version = member.Version
@@ -57,6 +59,9 @@ func (app *workbench) etcdDashboardSummary(c *ui.Context) {
 				leader = fmt.Sprintf("%d", member.LeaderID)
 			}
 		}
+	}
+	if maxSize > 0 {
+		size = formatIECBytes(maxSize)
 	}
 	if version == "" {
 		version = "—"
@@ -86,6 +91,10 @@ func (app *workbench) etcdDashboardSummary(c *ui.Context) {
 		}
 		app.etcdDashboardStat(c, app.localized("认证"), auth)
 		app.etcdDashboardStat(c, app.localized("认证 revision"), fmt.Sprintf("%d", dashboard.AuthRevision))
+	})
+	ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, app.localized("最大成员数据库大小")).TextColor(c.Theme().TextMuted)
+		ui.Text(c, size).Selectable()
 	})
 	if dashboard.MemberListErr != "" {
 		ui.Text(c, app.localized("读取成员列表失败：")+dashboard.MemberListErr).TextColor(c.Theme().Warning)

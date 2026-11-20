@@ -96,11 +96,15 @@ func (app *workbench) switchRedisDatabase(database int) {
 	profile := live.profile
 	profile.RedisDB = database
 	connectionID := redisDatabaseConnectionID(profile, database)
+	reusedOverview := app.redisOverview && app.openedConnectionID == connectionID
 	if !app.activateLiveConnectionForWorkspace(connectionID) {
-		app.openRedis(profile)
+		app.openRedis(profile, true)
 		return
 	}
 	app.openRedisWorkspace(connectionID)
+	if reusedOverview && !app.activeQuery.redisStateLoaded {
+		app.scanRedis(true)
+	}
 }
 
 func (app *workbench) saveRedisDefaultDatabase(database int) {

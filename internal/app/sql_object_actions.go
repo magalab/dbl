@@ -285,6 +285,8 @@ func (app *workbench) refreshCurrentConnection() {
 	switch {
 	case app.store != nil:
 		app.refreshSQLObjects()
+	case app.keyStore != nil && app.redisOverview:
+		app.refreshRedisInstance()
 	case app.keyStore != nil:
 		app.scanRedis(true)
 	case app.documentStore != nil:

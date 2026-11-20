@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.6] - 2026-11-20
+
+- Add Redis instance metrics and an etcd cluster dashboard with lease management and key-binding workflows.
+- Improve SQL result browsing with page-size selection, page jumps through the bounded result stream, a fixed row-number column, and export actions in result context menus.
+- Add staged table edits with a configurable confirmation before submission.
+- Improve connection and database overview panels, keep query settings with each workspace, and clarify connection switching in the workspace tabs.
+- Keep database/schema selection with each query workspace, improve connection overview tabs, and update database driver dependencies.
+
 ## [0.1.5] - 2026-11-19
 
 - Simplify the update dialogs and add space before the version message.

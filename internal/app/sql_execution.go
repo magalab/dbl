@@ -293,25 +293,37 @@ verb:
 }
 
 func (app *workbench) fetchNextResultPage() {
-	if app.busy || app.exporting || app.dialogOpen || app.activeQuery == nil || app.cursor == nil || app.queryContext == nil {
+	if app.activeQuery == nil {
+		return
+	}
+	workspace := app.activeQuery
+	currentPage := workspace.resultPage
+	if workspace.dataView {
+		currentPage = workspace.dataPage
+	}
+	app.fetchResultPage(currentPage + 1)
+}
+
+func (app *workbench) fetchResultPage(targetPage int) {
+	if app.busy || app.exporting || app.dialogOpen || app.activeQuery == nil || app.cursor == nil || app.queryContext == nil || targetPage < 0 {
 		return
 	}
 	workspace := app.activeQuery
 	cursor, ctx, historyID := app.cursor, app.queryContext, workspace.activeHistoryID
 	pageSize := resultWorkspacePageSize(workspace)
-	currentPage := workspace.resultPage
-	if workspace.dataView {
-		currentPage = workspace.dataPage
-	}
-	targetPage := currentPage + 1
 	rowsToRead := (targetPage+1)*pageSize - workspace.resultWindow.Len()
 	if rowsToRead <= 0 {
-		rowsToRead = pageSize
+		return
 	}
+	rowsToRead = min(rowsToRead, sqlstream.MaxBatchSize)
+	retainedRowsBefore := workspace.resultWindow.Len()
+	pageReadStarted := time.Now()
+	workspace.resultPageReadStarted = pageReadStarted
 	app.busy = true
 	app.status = app.localized("正在加载下一页…")
 	go func() {
 		rows, done, err := cursor.NextBatch(rowsToRead)
+		pageReadDuration := time.Since(pageReadStarted)
 		timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
 		cancelled := errors.Is(ctx.Err(), context.Canceled)
 		terminal := done || err != nil || cancelled || timedOut
@@ -320,6 +332,13 @@ func (app *workbench) fetchNextResultPage() {
 		}
 		app.window.Update(func() {
 			app.busy = false
+			workspace.resultPageReadStarted = time.Time{}
+			for i := range workspace.history {
+				if workspace.history[i].ID == historyID {
+					workspace.history[i].Duration += pageReadDuration
+					break
+				}
+			}
 			if len(rows) > 0 {
 				workspace.resultWindow.Append(rows)
 				workspace.resultOrderDirty = true
@@ -360,7 +379,14 @@ func (app *workbench) fetchNextResultPage() {
 			} else {
 				app.status = app.localized("查询结果还有后续页。")
 			}
-			app.updateHistory(historyID, time.Time{}, app.status)
+			app.updateWorkspaceHistory(workspace, historyID, time.Time{}, app.status)
+			if !terminal && targetPage >= resultPageCount(workspace.resultWindow.Len(), pageSize) &&
+				workspace.resultWindow.Len() > retainedRowsBefore && workspace.resultWindow.Len() < maxDisplayedRows {
+				app.fetchResultPage(targetPage)
+			} else if !terminal && targetPage >= resultPageCount(workspace.resultWindow.Len(), pageSize) &&
+				workspace.resultWindow.Len() <= retainedRowsBefore && app.activeQuery == workspace {
+				app.status = app.localized("当前结果窗口无法保留更多行，已跳转到最远可用页。")
+			}
 		})
 	}()
 }
@@ -610,15 +636,15 @@ func resultCountStatement(statement string) (string, bool) {
 	if statement == "" || !strings.HasPrefix(sqlRiskSummary(statement), "读取类") {
 		return "", false
 	}
-	code := strings.TrimSpace(sqlRiskCode(statement))
+	code := sqlRiskCode(statement)
 	fields := strings.Fields(code)
 	if len(fields) == 0 || !strings.EqualFold(fields[0], "SELECT") {
 		return "", false
 	}
-	trimmedEnd := len(code) - 1
-	if trimmedEnd >= 0 && code[trimmedEnd] == ';' {
-		statement = statement[:trimmedEnd] + statement[trimmedEnd+1:]
-		code = strings.TrimSpace(code[:trimmedEnd])
+	codeEnd := len(strings.TrimRight(code, " \t\r\n\v\f"))
+	if codeEnd > 0 && code[codeEnd-1] == ';' {
+		statement = statement[:codeEnd-1] + statement[codeEnd:]
+		code = code[:codeEnd-1] + code[codeEnd:]
 	}
 	if strings.Contains(code, ";") {
 		return "", false

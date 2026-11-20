@@ -8,6 +8,16 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestUpdateToolbarRemainsVisibleWithoutSelfUpdate(t *testing.T) {
+	app := newTestWorkbench()
+	app.language = "en"
+	app.updatesEnabled = false
+	tester := ui.NewTester(app.updateToolbarButton, 120, 60)
+	if button, ok := tester.AccessByRole(ui.RoleButton, "Check for updates"); !ok || button.Disabled {
+		t.Fatal("manual update check should remain available in the toolbar")
+	}
+}
+
 func TestUpdateSettingsUIExplainsUnavailableInstallLocation(t *testing.T) {
 	app := newTestWorkbench()
 	app.language = "en"
@@ -15,7 +25,10 @@ func TestUpdateSettingsUIExplainsUnavailableInstallLocation(t *testing.T) {
 	if !tester.HasText(app.localized("应用内更新仅适用于安装在当前用户可写目录的正式版本。")) {
 		t.Fatal("update UI did not explain why updates are unavailable")
 	}
-	if tester.HasText(app.localized("检查更新")) {
+	if control, ok := tester.AccessByRole(ui.RoleSwitch, app.localized("自动检查更新")); !ok || !control.Disabled {
+		t.Fatal("automatic updates should be visible but disabled when unavailable")
+	}
+	if _, ok := tester.AccessByRole(ui.RoleButton, app.localized("检查更新")); ok {
 		t.Fatal("update check action should be hidden when updates are unavailable")
 	}
 }

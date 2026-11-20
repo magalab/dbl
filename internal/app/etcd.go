@@ -62,11 +62,12 @@ func (app *workbench) openEtcd(profile preferences.ConnectionProfile) {
 				return
 			}
 			app.registerLiveConnection("etcd:"+profile.ID, config, profile)
+			*app.connectionTreeState("profile:"+profile.ID, true) = true
 			app.store, app.keyStore, app.documentStore, app.etcdStore = nil, nil, nil, config
 			app.etcdAdmin, _ = config.(connection.EtcdAdmin)
 			app.etcdSection = app.etcdPendingSection
 			if app.etcdSection == "" {
-				app.etcdSection = "keys"
+				app.etcdSection = "overview"
 			}
 			app.etcdToolbarSection = etcdToolbarSectionFor(app.etcdSection)
 			app.etcdSidebarSection = app.etcdSection

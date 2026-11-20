@@ -14,6 +14,7 @@ func (app *workbench) activateConnectionWorkspace(connectionID string) {
 	if !ok || live.connection == nil {
 		return
 	}
+	app.sqliteOverview = false
 	if live.connection.Driver() == connection.DriverRedis {
 		app.openRedisWorkspace(connectionID)
 		return
@@ -75,6 +76,7 @@ func (app *workbench) addWorkspace() {
 	if app.busy || app.exporting || app.dialogOpen || app.workspaceCount() >= maxWorkspaces || (app.hasActiveConnection() && app.store == nil) {
 		return
 	}
+	app.sqliteOverview = false
 	if implicit != nil {
 		implicit.implicitQuery = false
 		implicit.query.Buffer.Set("")
@@ -106,9 +108,11 @@ func (app *workbench) activateWorkspace(index int) {
 	if index < 0 || index >= len(app.workspaces) || app.busy || app.exporting || app.dialogOpen {
 		return
 	}
+	app.sqliteOverview = false
 	workspace := app.workspaces[index]
 	targetConnectionID := workspaceConnectionID(workspace)
 	connectionAlreadyActive := targetConnectionID == app.openedConnectionID
+	reusedRedisOverview := app.redisOverview && connectionAlreadyActive && workspace.redisView
 	if isSQLQueryWorkspace(app.activeQuery) && app.activeQuery == workspace && app.store != nil && app.sqlNamespace != "" {
 		app.activeQuery.queryNamespace = app.sqlNamespace
 	}
@@ -116,14 +120,14 @@ func (app *workbench) activateWorkspace(index int) {
 	if isSQLQueryWorkspace(workspace) {
 		targetNamespace = workspace.queryNamespace
 	}
-	if index == app.activeWorkspace && targetConnectionID == app.openedConnectionID && (targetNamespace == "" || targetNamespace == app.sqlNamespace) {
+	if !app.redisOverview && index == app.activeWorkspace && targetConnectionID == app.openedConnectionID && (targetNamespace == "" || targetNamespace == app.sqlNamespace) {
 		return
 	}
 	if app.cursor != nil && index != app.activeWorkspace {
 		app.stopCursorForWorkspaceChange(index, -1)
 		return
 	}
-	if app.activeQuery != nil && app.activeQuery.redisView && app.activeWorkspace != index {
+	if !app.redisOverview && app.activeQuery != nil && app.activeQuery.redisView && app.activeWorkspace != index {
 		app.saveRedisWorkspaceState(app.activeQuery)
 	}
 	if targetConnectionID != "" && targetConnectionID != app.openedConnectionID {
@@ -163,6 +167,7 @@ func (app *workbench) activateWorkspace(index int) {
 	} else if targetConnectionID == "" && app.hasActiveConnection() && !workspace.connectionView {
 		app.detachActiveConnectionContext()
 	}
+	app.redisOverview = false
 	app.activeWorkspace = index
 	app.activeQuery = workspace
 	if connectionAlreadyActive && isSQLQueryWorkspace(workspace) && targetNamespace != "" && app.store != nil && app.sqlNamespace != targetNamespace {
@@ -171,6 +176,9 @@ func (app *workbench) activateWorkspace(index int) {
 	}
 	if workspace.redisView && workspace.redisStateLoaded {
 		app.restoreRedisWorkspaceState(workspace)
+	} else if reusedRedisOverview {
+		app.scanRedis(true)
+		return
 	}
 	app.status = app.localized("已切换到 ") + workspace.title + "。"
 	if workspace.redisView {

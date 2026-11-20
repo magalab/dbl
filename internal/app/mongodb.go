@@ -53,7 +53,7 @@ func (app *workbench) openMongo(profile preferences.ConnectionProfile) {
 				err = errors.New("MongoDB adapter does not provide document capabilities")
 			}
 		}
-		var databases, collections []string
+		var databases []string
 		if err == nil {
 			databases, err = docs.Databases(ctx)
 			if err != nil && profile.Database != "" {
@@ -61,10 +61,7 @@ func (app *workbench) openMongo(profile preferences.ConnectionProfile) {
 				err = nil
 			}
 		}
-		selectedDB := profile.Database
-		if err == nil && selectedDB != "" {
-			collections, err = docs.Collections(ctx, selectedDB)
-		}
+
 		if err != nil && adapter != nil {
 			_ = adapter.Close()
 		}
@@ -82,11 +79,11 @@ func (app *workbench) openMongo(profile preferences.ConnectionProfile) {
 			}
 			app.registerLiveConnection("mongodb:"+profile.ID, docs, profile)
 			app.store, app.keyStore, app.documentStore, app.etcdStore = nil, nil, docs, nil
-			app.mongoDatabases, app.mongoCollections = databases, collections
+			app.mongoDatabases, app.mongoCollections = databases, nil
 			app.mongoIndexes = nil
 			app.mongoIndexError = ""
 			app.mongoIndexesLoading = false
-			app.mongoSelectedDB, app.mongoSelectedColl = selectedDB, ""
+			app.mongoSelectedDB, app.mongoSelectedColl = "", ""
 			app.mongoDocuments = nil
 			app.mongoNextOffset = 0
 			app.mongoHasMore = false
@@ -134,6 +131,12 @@ func (app *workbench) selectMongoDatabase(database string) {
 				return
 			}
 			app.mongoSelectedDB = database
+			if app.openedConnectionID != "" {
+				if live, ok := app.liveConnections[app.openedConnectionID]; ok && live.profile.ID != "" {
+					*app.connectionTreeState("profile:"+live.profile.ID, true) = true
+				}
+				*app.connectionTreeState("mongo-db:"+app.openedConnectionID+":"+database, false) = true
+			}
 			app.mongoSelectedColl = ""
 			app.mongoCollections = collections
 			app.mongoIndexes = nil
@@ -460,4 +463,26 @@ func truncateText(value string, maxBytes int) string {
 		cut--
 	}
 	return value[:cut] + "\n…（预览已截断）"
+}
+
+func (app *workbench) readMongoOverview(id string, live liveConnection) {
+	source, ok := live.connection.(connection.MongoOverviewSource)
+	if !ok || live.mongoOverviewRequested || app.window == nil {
+		return
+	}
+	live.mongoOverviewRequested = true
+	app.liveConnections[id] = live
+	ctx, cancel := app.withTaskTimeout(4 * time.Second)
+	window := app.window
+	go func() {
+		defer cancel()
+		info := source.MongoOverview(ctx)
+		window.Update(func() {
+			current, exists := app.liveConnections[id]
+			if exists && current.connection == live.connection {
+				current.mongoOverview = info
+				app.liveConnections[id] = current
+			}
+		})
+	}()
 }

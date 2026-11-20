@@ -12,7 +12,7 @@
 
 - Keep Chinese and English strings in the localization layer. Any new visible UI text must have both translations.
 - Use the shared icon helpers for icon-only actions and provide localized labels/tooltips for accessibility.
-- Prefer icons for buttons wherever the action is clear from its context; keep localized accessible labels/tooltips, and use color or icon changes to show toggled state.
+- Prefer shared icons for familiar, contextually clear actions and compact navigation. Give every icon-only control a localized accessible name and tooltip in Chinese and English, and make selected, toggled, and keyboard-focus states visible. Keep visible text for field labels, onboarding, consequential confirmations, and actions whose meaning would otherwise be unclear.
 - Store API keys, database secrets, and TLS private material only through the encrypted local credential vault. Preferences may keep opaque credential references, never secret values. Keep the vault directory and key file restricted to the current OS user.
 - AI requests must remain opt-in: the Send action sends directly to the selected provider without a mandatory payload preview. Attach context only when explicitly selected, and never execute generated SQL or data changes automatically.
 - Preserve read-only protections and explicit preview/confirmation flows for database mutations.

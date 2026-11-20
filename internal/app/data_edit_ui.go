@@ -123,7 +123,7 @@ func dataSaveShortcutLabel() string {
 
 func (app *workbench) dataInsertCell(c *ui.Context, workspace *queryWorkspace, tableColumn int) {
 	if tableColumn == 0 {
-		ui.Text(c, app.localized("新行")).SingleLine().TextColor(c.Theme().TextMuted)
+		ui.Text(c, app.localized("新行")).SingleLine().Padding(0, 8).Grow(1).TextAlign(ui.Center).TextColor(c.Theme().TextMuted)
 		return
 	}
 	columnIndex := tableColumn - 1
@@ -206,14 +206,14 @@ func (app *workbench) dataChangesPanel(c *ui.Context, workspace *queryWorkspace)
 			}
 			parts := make([]string, 0, len(change.values))
 			for name, value := range change.values {
-				parts = append(parts, name+"="+truncateText(dataReviewValue(value), 80))
+				parts = append(parts, name+"="+truncateText(dataReviewValueForColumn(workspace, name, value), 80))
 			}
 			if change.kind == connection.DeleteRow {
 				for columnIndex, column := range dataWorkspaceResultColumns(workspace) {
 					if columnIndex < len(change.original) {
 						for _, key := range dataPrimaryKey(workspace) {
 							if column.Name == key {
-								parts = append(parts, key+"="+truncateText(dataReviewValue(change.original[columnIndex]), 80))
+								parts = append(parts, key+"="+truncateText(dataReviewValueForColumn(workspace, key, change.original[columnIndex]), 80))
 							}
 						}
 					}

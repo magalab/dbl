@@ -162,10 +162,12 @@ func TestInterfaceSettingsAndDraftsAppearInBothLanguages(t *testing.T) {
 				t.Errorf("%s settings missing %s", language, label)
 			}
 		}
-		if err := tester.Click(app.localized("正常窗口")); err != nil {
+		if err := tester.Click(app.localized("最大化")); err != nil {
 			t.Fatal(err)
 		}
-		tester.Frame()
+		if app.interfaceDraft.StartupMode != "maximized" {
+			t.Fatal("maximized segment did not update the draft")
+		}
 		if err := tester.Click(app.localized("全屏")); err != nil {
 			t.Fatal(err)
 		}

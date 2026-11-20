@@ -12,25 +12,30 @@ import (
 )
 
 func (app *workbench) updateHistory(id uint64, started time.Time, outcome string) {
-	if id == 0 {
+	if app.activeQuery == nil {
+		return
+	}
+	app.updateWorkspaceHistory(app.activeQuery, id, started, outcome)
+}
+
+func (app *workbench) updateWorkspaceHistory(workspace *queryWorkspace, id uint64, started time.Time, outcome string) {
+	if workspace == nil || id == 0 {
 		return
 	}
 	var entry *queryRecord
-	for i := range app.activeQuery.history {
-		if app.activeQuery.history[i].ID == id {
-			entry = &app.activeQuery.history[i]
+	for i := range workspace.history {
+		if workspace.history[i].ID == id {
+			entry = &workspace.history[i]
 			break
 		}
 	}
 	if entry == nil {
 		return
 	}
-	entry.Rows = app.activeQuery.resultWindow.Total
+	entry.Rows = workspace.resultWindow.Total
 	entry.Outcome = safeHistoryOutcome(outcome)
 	if !started.IsZero() {
 		entry.Duration = time.Since(started)
-	} else if !entry.Started.IsZero() {
-		entry.Duration = time.Since(entry.Started)
 	}
 	app.persistQueryHistory()
 }

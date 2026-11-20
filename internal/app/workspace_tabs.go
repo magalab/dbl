@@ -5,9 +5,13 @@ import (
 	"github.com/magalab/dbl/internal/databaseicons"
 )
 
+func (workspace *queryWorkspace) showsTab() bool {
+	return !workspace.implicitQuery
+}
+
 func (app *workbench) workspaceTabs(c *ui.Context) {
 	activeID := uint64(0)
-	if app.activeWorkspace >= 0 && app.activeWorkspace < len(app.workspaces) {
+	if !app.redisOverview && !app.sqliteOverview && app.activeWorkspace >= 0 && app.activeWorkspace < len(app.workspaces) && app.workspaces[app.activeWorkspace].showsTab() {
 		activeID = app.workspaces[app.activeWorkspace].id
 	}
 	revealActive := activeID != 0 && activeID != app.workspaceTabsLastActiveID
@@ -19,7 +23,7 @@ func (app *workbench) workspaceTabs(c *ui.Context) {
 		tabScroll.Children(func() {
 			ui.Row(c).Gap(4).Shrink(0).AlignItems(ui.Center).Children(func() {
 				for index, workspace := range app.workspaces {
-					if workspace.implicitQuery {
+					if !workspace.showsTab() {
 						continue
 					}
 					title := workspace.title
@@ -39,7 +43,7 @@ func (app *workbench) workspaceTabs(c *ui.Context) {
 					if workspace.schemaView && schemaWorkspaceDirty(workspace) {
 						title += " *"
 					}
-					active := index == app.activeWorkspace
+					active := index == app.activeWorkspace && activeID != 0
 					theme := c.Theme()
 					background, foreground, border := theme.Surface, theme.Text, theme.Border
 					if active {

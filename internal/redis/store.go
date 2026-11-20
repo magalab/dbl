@@ -121,6 +121,37 @@ func (s *Store) HealthCheck(ctx context.Context) error {
 	}
 	return s.client.Ping(ctx).Err()
 }
+func (s *Store) RedisInfo(ctx context.Context) ([]connection.RedisInfoSection, error) {
+	if s == nil || s.client == nil {
+		return nil, errors.New("Redis connection is closed")
+	}
+	raw, err := s.client.Info(ctx, "all").Result()
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > 512*1024 {
+		return nil, errors.New("Redis INFO response is too large")
+	}
+	return parseRedisInfo(raw), nil
+}
+
+func parseRedisInfo(raw string) []connection.RedisInfoSection {
+	var sections []connection.RedisInfoSection
+	for line := range strings.SplitSeq(raw, "\n") {
+		line = strings.TrimSpace(line)
+		if name, header := strings.CutPrefix(line, "# "); header {
+			sections = append(sections, connection.RedisInfoSection{Name: name})
+			continue
+		}
+		name, value, found := strings.Cut(line, ":")
+		if found && name != "" && len(sections) > 0 {
+			section := &sections[len(sections)-1]
+			section.Fields = append(section.Fields, connection.RedisInfoField{Name: name, Value: value})
+		}
+	}
+	return sections
+}
+
 func (s *Store) Close() error {
 	if s == nil || s.client == nil {
 		return nil

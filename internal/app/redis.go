@@ -10,16 +10,21 @@ import (
 	"github.com/magalab/dbl/internal/connection"
 	"github.com/magalab/dbl/internal/preferences"
 	redisadapter "github.com/magalab/dbl/internal/redis"
+	"github.com/magalab/dbl/internal/safeerror"
 )
 
-func (app *workbench) openRedis(profile preferences.ConnectionProfile) {
+func (app *workbench) openRedis(profile preferences.ConnectionProfile, browseDatabase bool) {
 	if app.busy || app.exporting || app.dialogOpen || profile.Driver != preferences.DriverRedis {
 		return
+	}
+	if !browseDatabase {
+		// An instance handshake uses Redis' initial DB 0 without browsing its keys.
+		profile.RedisDB = 0
 	}
 	app.cancelRedisDeleteConfirmation()
 	app.cancelRedisTTLRefresh()
 	app.stageActiveDataWorkspaceDraft()
-	if app.activeQuery != nil && app.activeQuery.redisView {
+	if !app.redisOverview && app.activeQuery != nil && app.activeQuery.redisView && app.activeQuery.redisConnectionID == app.openedConnectionID {
 		app.saveRedisWorkspaceState(app.activeQuery)
 	}
 	app.busy = true
@@ -58,7 +63,7 @@ func (app *workbench) openRedis(profile preferences.ConnectionProfile) {
 		}
 		var page connection.KeyPage
 		var metadata map[string]connection.KeyInfo
-		if err == nil {
+		if err == nil && browseDatabase {
 			page, err = keys.ScanKeysByType(ctx, match, keyType, 0, 100)
 			if err == nil {
 				metadata = inspectRedisKeyMetadata(ctx, keys, page.Keys)
@@ -93,12 +98,17 @@ func (app *workbench) openRedis(profile preferences.ConnectionProfile) {
 			app.openedLabel = fmt.Sprintf("%s · %s/%d", profile.Name, profile.Host, profile.RedisDB)
 			app.openedEnvironment = profile.Environment
 			app.openedReadOnly = profile.ReadOnly
-			app.status = app.localized("Redis 已连接，已加载一页 SCAN 结果。")
 			for _, workspace := range app.workspaces {
 				if workspace.redisView && workspace.redisConnectionID == sessionID {
 					workspace.redisStateLoaded = false
 				}
 			}
+			app.redisOverview = !browseDatabase
+			if !browseDatabase {
+				app.status = app.localized("Redis 实例已连接，请选择数据库。")
+				return
+			}
+			app.status = app.localized("Redis 已连接，已加载一页 SCAN 结果。")
 			app.openRedisWorkspace(sessionID)
 			app.saveRedisWorkspaceState(app.activeQuery)
 		})
@@ -106,7 +116,7 @@ func (app *workbench) openRedis(profile preferences.ConnectionProfile) {
 }
 
 func (app *workbench) scanRedis(reset bool) {
-	if app.busy || app.keyStore == nil {
+	if app.busy || app.keyStore == nil || app.redisOverview {
 		return
 	}
 	if reset {
@@ -238,4 +248,37 @@ func redisMatchPattern(value string) string {
 		return value
 	}
 	return value + "*"
+}
+
+func (app *workbench) refreshRedisInstance() {
+	id := app.openedConnectionID
+	live, ok := app.liveConnections[id]
+	if !ok || live.redisInfoLoading || app.window == nil {
+		return
+	}
+	source, ok := live.connection.(connection.RedisInfoSource)
+	if !ok {
+		return
+	}
+	live.redisInfoLoading = true
+	app.liveConnections[id] = live
+	ctx, cancel := app.withTaskTimeout(5 * time.Second)
+	go func() {
+		defer cancel()
+		sections, err := source.RedisInfo(ctx)
+		app.window.Update(func() {
+			current, exists := app.liveConnections[id]
+			if !exists || current.connection != live.connection {
+				return
+			}
+			current.redisInfoRead, current.redisInfoLoading = true, false
+			current.redisInfoError = ""
+			if err == nil {
+				current.redisInfo = sections
+			} else {
+				current.redisInfoError = safeerror.Display(err)
+			}
+			app.liveConnections[id] = current
+		})
+	}()
 }

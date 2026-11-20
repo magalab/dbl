@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -748,7 +749,8 @@ func TestConnectionProfileEditorIsModal(t *testing.T) {
 	}
 	settingsTester := ui.NewTester(app.settingsView, 640, 620)
 	settingsTester.Frame()
-	if !settingsTester.HasText("查询历史") || !settingsTester.HasText("AI 助手") {
+	_, hasAITab := settingsTester.AccessByRole(ui.RoleTab, "AI 助手")
+	if !settingsTester.HasText("查询历史") || !hasAITab {
 		t.Fatal("settings dialog is missing its preference sections")
 	}
 }
@@ -1418,5 +1420,112 @@ func TestAIAssistantUsesFullPageAtNarrowWindowWidths(t *testing.T) {
 	tester.Frame()
 	if _, found := tester.Find("SQL 查询编辑器"); !found {
 		t.Fatal("wide window did not restore the main SQL workspace")
+	}
+}
+
+func TestRedisProfileShowsOverviewUntilDatabaseChosen(t *testing.T) {
+	app := newTestWorkbench()
+	profile := preferences.ConnectionProfile{ID: "redis-test", Name: "Local Redis", Driver: preferences.DriverRedis, Host: "localhost", Port: 6379}
+	id := redisDatabaseConnectionID(profile, 0)
+	keys := testKeyValue{}
+	app.registerLiveConnection(id, keys, profile)
+	app.connectionProfiles = []preferences.ConnectionProfile{profile}
+	app.openedConnectionID, app.openedDriver, app.keyStore = id, connection.DriverRedis, keys
+	app.openSavedProfile(profile)
+	if !app.redisOverview || len(app.workspaces) != 1 || app.activeQuery.redisView {
+		t.Fatal("connecting the instance opened a database workspace")
+	}
+	tt := ui.NewTester(app.view, 1280, 800)
+	if !tt.HasText("localhost:6379") || tt.HasText("Redis 键列表") {
+		t.Fatal("instance did not show its overview instead of the key browser")
+	}
+	app.openRedisWorkspace(id)
+	app.saveRedisWorkspaceState(app.activeQuery)
+	app.openSavedProfile(profile)
+	app.switchRedisDatabase(0)
+	if app.redisOverview || !app.queryWorkspaceRequested || !app.activeQuery.redisView || app.activeQuery.redisConnectionID != id {
+		t.Fatal("explicitly choosing DB 0 did not activate its workspace")
+	}
+}
+
+func TestRedisInstanceMetricsUseServerStatsWithoutScanning(t *testing.T) {
+	app := newTestWorkbench()
+	app.keyStore = testKeyValue{}
+	app.redisOverview = true
+	app.openedConnectionID = "redis-test"
+	app.liveConnections = map[string]liveConnection{"redis-test": {
+		redisInfoRead: true,
+		redisInfo: []connection.RedisInfoSection{
+			{Name: "Server", Fields: []connection.RedisInfoField{{Name: "redis_version", Value: "8.0.1"}}},
+			{Name: "Memory", Fields: []connection.RedisInfoField{{Name: "used_memory_human", Value: "2.51M"}}},
+			{Name: "Stats", Fields: []connection.RedisInfoField{{Name: "keyspace_hits", Value: "3"}, {Name: "keyspace_misses", Value: "1"}}},
+			{Name: "Keyspace", Fields: []connection.RedisInfoField{{Name: "db0", Value: "keys=3,expires=0"}, {Name: "db1", Value: "keys=9,expires=1"}}},
+		},
+	}}
+	live := app.liveConnections["redis-test"]
+	for i := range 32 {
+		live.redisInfo[0].Fields = append(live.redisInfo[0].Fields, connection.RedisInfoField{
+			Name: fmt.Sprintf("server_metric_%02d", i), Value: "1",
+		})
+	}
+	app.liveConnections["redis-test"] = live
+	tt := ui.NewTester(app.redisInstanceOverview, 900, 650)
+	for _, text := range []string{"2.51M", "75.00%", "12", "内存", "键空间", "redis_version"} {
+		if !tt.HasText(text) {
+			t.Errorf("Redis metrics missing %q", text)
+		}
+	}
+	before, ok := tt.Find("搜索 Redis 指标")
+	if !ok || tt.HasText("server_metric_31") {
+		t.Fatal("the last metric should initially be offscreen")
+	}
+	header, found := tt.Find("指标")
+	if !found {
+		t.Fatal("missing metric table header")
+	}
+	tt.Scroll(650, header.Y+header.H+35, 0, 1100)
+	after, ok := tt.Find("搜索 Redis 指标")
+	if !ok || after.Y != before.Y || !tt.HasText("server_metric_31") {
+		t.Fatal("scrolling the metric list did not reach the last row with the search field fixed")
+	}
+	if err := tt.Click("内存"); err != nil {
+		t.Fatal(err)
+	}
+	if !tt.HasText("used_memory_human") {
+		t.Fatal("selected Redis section did not display the underlying fields")
+	}
+	if err := tt.Click("搜索 Redis 指标"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type("db1")
+	if !tt.HasText("keys=9,expires=1") || !tt.HasText("分组") || tt.HasText("used_memory_human") {
+		t.Fatal("Redis metrics search did not return the matching row in another group")
+	}
+}
+
+func TestEtcdConnectionRevealsSidebarNavigation(t *testing.T) {
+	app := newTestWorkbench()
+	profile := preferences.ConnectionProfile{ID: "sample-etcd", Driver: preferences.DriverEtcd, Name: "Config"}
+	id := profileConnectionID(profile)
+	store := &etcdadapter.Store{}
+	app.connectionProfiles = []preferences.ConnectionProfile{profile}
+	app.registerLiveConnection(id, store, profile)
+	app.openedConnectionID, app.openedDriver, app.etcdStore = id, connection.DriverEtcd, store
+	*app.connectionTreeState("profile:"+profile.ID, false) = false
+	app.openSavedProfile(profile)
+	if app.etcdSection != "overview" {
+		t.Fatal("selecting the etcd profile did not return to the overview")
+	}
+	overview := ui.NewTester(app.etcdWorkspace, 800, 480)
+	if !overview.HasText("Config") || overview.HasText("集群概览") {
+		t.Fatal("etcd overview did not render independently of the monitor")
+	}
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Tree(c, func() { app.connectionTree(c) })
+	}, 320, 360)
+	for _, name := range []string{"键", "用户与角色", "服务仪表盘"} {
+		if !tt.HasText(name) {
+			t.Errorf("etcd sidebar did not reveal %q", name)
+		}
 	}
 }

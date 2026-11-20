@@ -90,17 +90,20 @@ type memberProbeResult struct {
 }
 
 func (s *Store) probeDashboardMembers(ctx context.Context, dashboard *connection.EtcdDashboard) {
-	probes := make([]memberProbe, 0, len(dashboard.Members))
-	for _, member := range dashboard.Members {
-		for _, endpoint := range member.ClientURLs {
-			if endpoint != "" {
-				probes = append(probes, memberProbe{memberID: member.ID, endpoint: endpoint})
-			}
+	probes := make([]memberProbe, 0, len(dashboard.Members)+len(s.client.Endpoints()))
+	seen := make(map[string]bool)
+	for _, endpoint := range s.client.Endpoints() {
+		if !seen[endpoint] {
+			probes = append(probes, memberProbe{endpoint: endpoint})
+			seen[endpoint] = true
 		}
 	}
-	if len(probes) == 0 {
-		for _, endpoint := range s.client.Endpoints() {
-			probes = append(probes, memberProbe{endpoint: endpoint})
+	for _, member := range dashboard.Members {
+		for _, endpoint := range member.ClientURLs {
+			if endpoint != "" && !seen[endpoint] {
+				probes = append(probes, memberProbe{memberID: member.ID, endpoint: endpoint})
+				seen[endpoint] = true
+			}
 		}
 	}
 	if len(probes) > 64 {
@@ -122,26 +125,45 @@ func (s *Store) probeDashboardMembers(ctx context.Context, dashboard *connection
 	workers.Wait()
 	close(results)
 	for result := range results {
+		memberID := result.memberID
+		if result.err == nil {
+			if result.status == nil || result.status.Header == nil {
+				result.err = errors.New("etcd returned an incomplete status response")
+			} else {
+				memberID = result.status.Header.GetMemberId()
+			}
+		}
 		memberIndex := -1
 		for i := range dashboard.Members {
-			if dashboard.Members[i].ID == result.memberID {
+			member := &dashboard.Members[i]
+			if (memberID != 0 && member.ID == memberID) || member.Endpoint == result.endpoint {
 				memberIndex = i
 				break
 			}
+			if result.err != nil && memberID == 0 {
+				for _, endpoint := range member.ClientURLs {
+					if endpoint == result.endpoint {
+						memberIndex = i
+						break
+					}
+				}
+				if memberIndex >= 0 {
+					break
+				}
+			}
 		}
 		if memberIndex < 0 {
-			dashboard.Members = append(dashboard.Members, connection.EtcdMember{Endpoint: result.endpoint})
+			if dashboard.MemberListErr == "" {
+				continue
+			}
+			dashboard.Members = append(dashboard.Members, connection.EtcdMember{ID: memberID, Endpoint: result.endpoint})
 			memberIndex = len(dashboard.Members) - 1
 		}
 		member := &dashboard.Members[memberIndex]
 		if result.err != nil {
-			if member.StatusError == "" {
+			if !member.Reachable && member.StatusError == "" {
 				member.StatusError = result.err.Error()
 			}
-			continue
-		}
-		if result.status == nil || result.status.Header == nil {
-			member.StatusError = "etcd returned an incomplete status response"
 			continue
 		}
 		member.Reachable = true

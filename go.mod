@@ -10,9 +10,9 @@ require (
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/redis/go-redis/v9 v9.23.0
-	go.etcd.io/etcd/api/v3 v3.7.3
-	go.etcd.io/etcd/client/v3 v3.7.3
-	go.mongodb.org/mongo-driver/v2 v2.10.0
+	go.etcd.io/etcd/api/v3 v3.7.4
+	go.etcd.io/etcd/client/v3 v3.7.4
+	go.mongodb.org/mongo-driver/v2 v2.10.1
 	go.uber.org/zap v1.28.0
 	golang.org/x/sys v0.50.0
 	google.golang.org/grpc v1.85.0
@@ -37,10 +37,10 @@ require (
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/xdg-go/scram v1.4.0 // indirect
-	github.com/xdg-go/stringprep v1.0.4 // indirect
+	github.com/xdg-go/stringprep v1.0.5 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.7.3 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.7.4 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
@@ -48,10 +48,10 @@ require (
 	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20261116203732-fd2c7689a808 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261116203732-fd2c7689a808 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261118221215-c8830f628b3f // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261118221215-c8830f628b3f // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-	modernc.org/libc v1.81.2 // indirect
+	modernc.org/libc v1.82.2 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.13.0 // indirect
 )

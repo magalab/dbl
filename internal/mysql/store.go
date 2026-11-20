@@ -170,6 +170,12 @@ type Store struct {
 
 func (store *Store) Driver() connection.Driver { return connection.DriverMySQL }
 
+func (store *Store) SQLVersion(ctx context.Context) (string, error) {
+	var version string
+	err := store.db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version)
+	return version, err
+}
+
 func (store *Store) HealthCheck(ctx context.Context) error {
 	if store == nil || store.db == nil {
 		return errors.New("MySQL connection is closed")

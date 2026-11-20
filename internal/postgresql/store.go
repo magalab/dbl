@@ -143,6 +143,12 @@ type Store struct {
 
 func (store *Store) Driver() connection.Driver { return connection.DriverPostgreSQL }
 
+func (store *Store) SQLVersion(ctx context.Context) (string, error) {
+	var version string
+	err := store.db.QueryRowContext(ctx, "SHOW server_version").Scan(&version)
+	return version, err
+}
+
 func (store *Store) HealthCheck(ctx context.Context) error {
 	if store == nil || store.db == nil {
 		return errors.New("PostgreSQL connection is closed")

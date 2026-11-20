@@ -15,6 +15,14 @@ func (app *workbench) workspace(c *ui.Context) {
 		if app.queryWorkspaceRequested {
 			app.workspaceTabs(c)
 		}
+		if app.sqliteOverview && app.store != nil && app.openedDriver == connection.DriverSQLite {
+			app.sqlConnectionOverview(c)
+			return
+		}
+		if app.redisOverview && app.keyStore != nil {
+			app.redisInstanceOverview(c)
+			return
+		}
 		if app.activeQuery != nil && app.activeQuery.connectionView && !connectionViewAvailable(app, app.activeQuery) {
 			ui.Column(c).Fill().Justify(ui.Center).AlignItems(ui.Center).Gap(10).Children(func() {
 				ui.Text(c, app.activeQuery.title).Bold().Role(ui.RoleHeading).Level(1)
@@ -27,7 +35,7 @@ func (app *workbench) workspace(c *ui.Context) {
 						reconnect := ui.PrimaryButton(c, app.localized("重新连接"))
 						reconnect.Disabled(app.busy || app.exporting || app.dialogOpen)
 						if reconnect.Clicked() {
-							app.openRedis(profile)
+							app.openRedis(profile, true)
 						}
 						break
 					}
@@ -43,11 +51,28 @@ func (app *workbench) workspace(c *ui.Context) {
 			})
 			return
 		}
+		if app.activeQuery != nil && app.activeQuery.connectionView &&
+			(app.activeQuery.connectionDriver == connection.DriverPostgreSQL || app.activeQuery.connectionDriver == connection.DriverMySQL) && app.store != nil {
+			if app.activeQuery.connectionViewNamespace != "" && app.activeQuery.connectionViewNamespace == app.sqlNamespace {
+				app.sqlNamespaceOverview(c, app.activeQuery.connectionViewNamespace)
+			} else {
+				app.sqlConnectionOverview(c)
+			}
+			return
+		}
 		if app.aiFullPage {
 			app.aiWorkspace(c)
 			return
 		}
 		if app.documentStore != nil {
+			if app.mongoSelectedColl == "" {
+				if app.mongoSelectedDB != "" {
+					app.mongoDatabaseOverview(c)
+				} else {
+					app.mongoConnectionOverview(c)
+				}
+				return
+			}
 			app.ensureMongoQueryEditors()
 			ui.Row(c).Padding(8, 12).Gap(10).Children(func() {
 				ui.Text(c, app.localized("MongoDB 文档")).Bold().Role(ui.RoleHeading).Level(1)
@@ -55,10 +80,6 @@ func (app *workbench) workspace(c *ui.Context) {
 			})
 			ui.Scroll(c).Fill().Children(func() {
 				ui.Column(c).Padding(12).Gap(8).Children(func() {
-					if app.mongoSelectedColl == "" {
-						ui.Text(c, app.localized("从左侧选择数据库和集合。文档结果按需加载。")).TextColor(c.Theme().TextMuted)
-						return
-					}
 					ui.Text(c, app.mongoSelectedDB+" / "+app.mongoSelectedColl).Bold()
 					mode := ui.Checkbox(c, &app.mongoUsePipeline, app.localized("使用聚合管道"))
 					mode.Disabled(app.busy || app.dialogOpen)

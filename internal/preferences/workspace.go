@@ -110,6 +110,27 @@ func (store *Store) SetInterface(settings InterfaceSettings, revision uint64) er
 	return nil
 }
 
+// SetSkipTableChangeConfirmation stores the explicit opt-out. A missing or
+// false value keeps the confirmation enabled for existing and new settings.
+func (store *Store) SetSkipTableChangeConfirmation(skip bool, revision uint64) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if revision <= store.tableChangeConfirmationRevision {
+		return nil
+	}
+	settings := store.settings
+	settings.SkipTableChangeConfirmation = skip
+	if err := writeSettings(store.dir, settings); err != nil {
+		return err
+	}
+	store.settings = settings
+	if revision > store.revision {
+		store.revision = revision
+	}
+	store.tableChangeConfirmationRevision = revision
+	return nil
+}
+
 func normalizeWorkspaceSettings(settings Settings) Settings {
 	settings.Interface = normalizeInterface(settings.Interface)
 	if !settings.QueryDraftsEnabled {

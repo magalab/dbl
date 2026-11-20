@@ -239,8 +239,22 @@ func (app *workbench) openSavedProfile(profile preferences.ConnectionProfile) {
 		return
 	}
 	id := app.profileLiveSessionID(profile)
-	if app.activateLiveConnectionForWorkspace(id) {
-		app.activateConnectionWorkspace(id)
+	if app.activateLiveConnectionMode(id, true, profile.Driver == preferences.DriverRedis) {
+		if profile.Driver == preferences.DriverEtcd {
+			*app.connectionTreeState("profile:"+profile.ID, true) = true
+			app.etcdSidebarSection, app.etcdToolbarSection = "overview", "overview"
+			app.etcdGlobalSearch = false
+			app.setEtcdSection("overview")
+		}
+		switch profile.Driver {
+		case preferences.DriverSQLite:
+			app.sqliteOverview = true
+		case preferences.DriverRedis:
+		case preferences.DriverPostgreSQL, preferences.DriverMySQL:
+			app.openConnectionView(id)
+		default:
+			app.activateConnectionWorkspace(id)
+		}
 		return
 	}
 	name := profile.Name
@@ -257,11 +271,11 @@ func (app *workbench) openSavedProfile(profile preferences.ConnectionProfile) {
 		}
 		app.openSQLite(access)
 	case preferences.DriverPostgreSQL:
-		app.openPostgreSQL(profile)
+		app.openPostgreSQLConnectionInfo(profile)
 	case preferences.DriverMySQL:
-		app.openMySQL(profile)
+		app.openMySQLConnectionInfo(profile)
 	case preferences.DriverRedis:
-		app.openRedis(profile)
+		app.openRedis(profile, false)
 	case preferences.DriverMongoDB:
 		app.openMongo(profile)
 	case preferences.DriverEtcd:

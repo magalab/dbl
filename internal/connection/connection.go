@@ -116,6 +116,35 @@ type CurrentDatabase interface {
 	CurrentDatabase(context.Context) (string, error)
 }
 
+// SQLVersion is optional metadata for SQL adapters.
+type SQLVersion interface {
+	SQLVersion(context.Context) (string, error)
+}
+
+// MongoOverviewSource reports optional, read-only instance metadata.
+type MongoOverviewSource interface {
+	MongoOverview(context.Context) MongoOverview
+}
+
+type MongoOverview struct {
+	Version  string
+	Topology string
+}
+
+// RedisInfoSource reports instance metrics without selecting or scanning a database.
+type RedisInfoSource interface {
+	RedisInfo(context.Context) ([]RedisInfoSection, error)
+}
+
+type RedisInfoSection struct {
+	Name   string
+	Fields []RedisInfoField
+}
+
+type RedisInfoField struct {
+	Name, Value string
+}
+
 // KeyValue is a capability contract for key/value stores. Cursor values are
 // opaque to the UI and pages must remain bounded.
 type KeyValue interface {

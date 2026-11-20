@@ -37,13 +37,23 @@ func (app *workbench) connectionTree(c *ui.Context) {
 			app.connectionContextMenu(menu, profile, connected)
 		})
 		item = connectionTreeDecorations(c, item, string(profile.Driver), "", 0, profile.Favorite, connected)
+		theme := c.Theme()
+		if connected || app.treeConnectionErrors[profile.ID] != "" {
+			item.PaddingEnd(theme.Space(8))
+		}
+		if item.Hovered() || item.FocusWithin() {
+			item.Children(func() {
+				ui.Spacer(c)
+				app.connectionRowActions(c, profile, connected)
+			})
+		}
 		if message := app.treeConnectionErrors[profile.ID]; message != "" {
 			item = item.Tooltip(profile.Name + " · " + message).DrawOver(func(p *ui.Painter, r ui.Rect) {
 				size := c.Theme().Space(4)
 				p.Icon(actionIcons["warning"], ui.Rect{X: r.X + r.W - c.Theme().Space(3) - size, Y: r.Y + (r.H-size)/2, W: size, H: size}, c.Theme().Warning)
 			})
 		}
-		if item.Clicked() && !selected {
+		if item.Clicked() && (!selected || profile.Driver == preferences.DriverRedis || profile.Driver == preferences.DriverEtcd) {
 			app.openSavedProfile(profile)
 		}
 		if *open && profile.Driver != preferences.DriverEtcd {
@@ -63,6 +73,33 @@ func (app *workbench) connectionTree(c *ui.Context) {
 
 	if !app.hasActiveConnection() && len(profiles) == 0 {
 		ui.Text(c, app.localized("尚无连接配置")).TextColor(c.Theme().TextMuted)
+	}
+}
+
+func (app *workbench) connectionRowActions(c *ui.Context, profile preferences.ConnectionProfile, connected bool) {
+	theme := c.Theme()
+	action := func(label, icon string, disabled bool) ui.Element {
+		button := iconButton(c, app.localized(label), actionIcons[icon]).Size(22, 22).Padding(3).
+			BorderWidth(0).Background(ui.Transparent).Disabled(disabled)
+		if button.Hovered() {
+			button.Background(theme.SurfaceHover)
+		}
+		return button
+	}
+	busy := app.busy || app.exporting || app.dialogOpen
+	if connected {
+		if app.canOpenProfileQuery(profile, connected) && action("新建查询", "add", false).Clicked() {
+			app.openProfileQuery(profile, "")
+		}
+		if action("刷新", "refresh", busy).Clicked() {
+			app.refreshProfileConnection(profile)
+		}
+	}
+	if action("实例信息", "info", app.dialogOpen).Clicked() {
+		app.showInstanceInfo(profile)
+	}
+	if connected && action("关闭连接", "unplug", busy).Clicked() {
+		app.closeProfileConnection(profile)
 	}
 }
 
@@ -118,7 +155,6 @@ func (app *workbench) profileConnectionTreeResources(c *ui.Context, profile pref
 		for database := 0; database < 16; database++ {
 			database := database
 			item := ui.TreeItem(c, treeIconPlaceholder+app.redisDatabaseLabelForProfile(profile, database), nil, nil).
-				Selected(database == profile.RedisDB).
 				ContextMenu(func(menu *ui.Menu) {
 					if app.profileIsSelected(profile) {
 						app.redisDatabaseContextMenu(menu, database)
@@ -185,7 +221,7 @@ func (app *workbench) profileSQLNamespaces(c *ui.Context, profile preferences.Co
 		if item.Clicked() {
 			*open = true
 			if app.activateLiveConnectionForWorkspace(id) {
-				app.activateConnectionWorkspace(id)
+				app.openConnectionView(id)
 			}
 			if app.store != nil && namespace != app.sqlNamespace {
 				app.switchSQLNamespace(namespace)

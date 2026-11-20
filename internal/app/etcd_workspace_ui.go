@@ -7,6 +7,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/magalab/dbl/internal/connection"
+	"github.com/magalab/dbl/internal/databaseicons"
 	"github.com/magalab/dbl/internal/safeerror"
 )
 
@@ -35,6 +36,8 @@ func (app *workbench) setEtcdSection(section string) {
 		if !app.etcdLeasesLoaded {
 			app.refreshEtcdLeases()
 		}
+	case "overview":
+		app.loadEtcdDashboard(false)
 	case "dashboard":
 		app.loadEtcdDashboard(changed)
 	case "maintenance":
@@ -43,6 +46,10 @@ func (app *workbench) setEtcdSection(section string) {
 }
 
 func (app *workbench) etcdWorkspace(c *ui.Context) {
+	if app.etcdSection == "overview" {
+		app.etcdConnectionOverview(c)
+		return
+	}
 	ui.Column(c).Fill().Children(func() {
 		app.etcdWorkspaceNavigation(c)
 		switch app.etcdSection {
@@ -58,6 +65,103 @@ func (app *workbench) etcdWorkspace(c *ui.Context) {
 			app.etcdKeysWorkspace(c)
 		}
 	})
+}
+
+func (app *workbench) etcdConnectionOverview(c *ui.Context) {
+	profile := app.liveConnections[app.openedConnectionID].profile
+	theme := c.Theme()
+	name := profile.Name
+	if name == "" {
+		name = "etcd"
+	}
+	access := "读写"
+	if app.openedReadOnly {
+		access = "只读"
+	}
+	ui.Scroll(c).Fill().Children(func() {
+		ui.Column(c).FillWidth().Padding(24).AlignItems(ui.Center).Children(func() {
+			ui.Column(c).Width(680).MaxWidthPercent(100).Gap(14).Children(func() {
+				ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Children(func() {
+					if icon, color, ok := databaseicons.Icon(string(connection.DriverEtcd)); ok {
+						ui.Icon(c, icon).Size(24, 24).TextColor(color).Tooltip("etcd")
+					}
+					ui.Text(c, name).Grow(1).MinWidth(0).FontSize(theme.FontSize + 6).Bold().Role(ui.RoleHeading).Level(1)
+					ui.Text(c, app.localized("已连接")).TextColor(theme.Success)
+					refresh := iconButton(c, app.localized("刷新"), actionIcons["refresh"])
+					refresh.Disabled(app.etcdAdmin == nil || app.etcdDashboardLoading)
+					if refresh.Clicked() {
+						app.loadEtcdDashboard(true)
+					}
+				})
+				ui.Column(c).FillWidth().Padding(12, 16).Gap(10).
+					Background(theme.Surface).Border(1, theme.Border).Radius(theme.Radius).Children(func() {
+					app.connectionOverviewField(c, overviewField{"主机 / Endpoint", profileEndpoint(profile), "plug"})
+					app.connectionOverviewField(c, overviewField{"访问模式", app.localized(access), "shield"})
+					if app.openedEnvironment != "" {
+						app.connectionOverviewField(c, overviewField{"环境", app.localized(environmentLabel(app.openedEnvironment)), "tag"})
+					}
+				})
+				if app.etcdDashboardLoading {
+					ui.Text(c, app.localized("正在读取集群概览…")).TextColor(theme.TextMuted)
+				} else if app.etcdDashboardLoaded {
+					app.etcdOverviewStats(c)
+				}
+			})
+		})
+	})
+}
+
+func (app *workbench) etcdOverviewStats(c *ui.Context) {
+	dashboard := app.etcdDashboard
+	if app.etcdDashboardError != "" {
+		ui.Text(c, app.localized("不可读取")).TextColor(c.Theme().TextMuted)
+		return
+	}
+	members, alarms, auth := "—", "—", "—"
+	if dashboard.MemberListErr == "" {
+		members = strconv.Itoa(len(dashboard.Members))
+	}
+	if dashboard.AlarmListErr == "" {
+		alarms = strconv.Itoa(len(dashboard.Alarms))
+	}
+	if dashboard.AuthStatusErr == "" {
+		auth = app.localized("未启用")
+		if dashboard.AuthEnabled {
+			auth = app.localized("已启用")
+		}
+	}
+	ui.Row(c).FillWidth().Gap(8).Children(func() {
+		app.etcdDashboardStat(c, app.localized("集群成员数"), members)
+		app.etcdDashboardStat(c, app.localized("告警数"), alarms)
+		app.etcdDashboardStat(c, app.localized("认证"), auth)
+	})
+	version, revision, backend := "—", "—", "—"
+	var maxBackend int64
+	for _, member := range dashboard.Members {
+		if !member.Reachable {
+			continue
+		}
+		if version == "—" && member.Version != "" {
+			version = member.Version
+		}
+		revision = strconv.FormatInt(dashboard.Revision, 10)
+		maxBackend = max(maxBackend, member.BackendSize)
+	}
+	if maxBackend > 0 {
+		backend = formatIECBytes(maxBackend)
+	}
+	ui.Row(c).FillWidth().Gap(8).Children(func() {
+		app.etcdDashboardStat(c, app.localized("etcd 版本"), version)
+		app.etcdDashboardStat(c, app.localized("Key revision"), revision)
+		app.etcdDashboardStat(c, app.localized("最大成员数据库大小"), backend)
+	})
+	if metrics := dashboard.Metrics; metrics.Available {
+		ui.Row(c).FillWidth().Gap(8).Children(func() {
+			app.etcdDashboardStat(c, app.localized("运行时长"), formatDuration(metrics.UptimeSeconds))
+			app.etcdDashboardStat(c, app.localized("驻留内存"), formatIECBytes(int64(metrics.ResidentMemoryBytes)))
+			app.etcdDashboardStat(c, app.localized("后端使用率"), percent(metrics.BackendSizeInUse, metrics.BackendQuota))
+		})
+	}
 }
 
 func (app *workbench) etcdWorkspaceNavigation(c *ui.Context) {

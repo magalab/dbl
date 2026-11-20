@@ -28,25 +28,26 @@ const MaxQueryHistoryEntries = 100
 const MaxQueryHistorySQLBytes = 64 << 10
 
 type Settings struct {
-	Version                  int                 `json:"version"`
-	Appearance               string              `json:"appearance,omitempty"`
-	Language                 string              `json:"language,omitempty"`
-	Layout                   *Layout             `json:"layout,omitempty"`
-	LastSQLitePath           string              `json:"last_sqlite_path,omitempty"`
-	RecentSQLitePaths        []string            `json:"recent_sqlite_paths,omitempty"`
-	RecentConnectionIDs      []string            `json:"recent_connection_ids,omitempty"`
-	SQLiteProfiles           []SQLiteProfile     `json:"sqlite_profiles,omitempty"`
-	ConnectionProfiles       []ConnectionProfile `json:"connection_profiles,omitempty"`
-	QueryHistoryEnabled      bool                `json:"query_history_enabled,omitempty"`
-	QueryHistory             []QueryHistoryEntry `json:"query_history,omitempty"`
-	QueryDraftsEnabled       bool                `json:"query_drafts_enabled,omitempty"`
-	QueryDrafts              []QueryDraft        `json:"query_drafts,omitempty"`
-	ActiveQueryDraft         int                 `json:"active_query_draft,omitempty"`
-	UpdateCheckIntervalHours int                 `json:"update_check_interval_hours,omitempty"`
-	Interface                InterfaceSettings   `json:"interface,omitempty"`
-	AIProviders              []AIProvider        `json:"ai_providers,omitempty"`
-	ActiveAIProviderID       string              `json:"active_ai_provider_id,omitempty"`
-	AI                       AISettings          `json:"ai,omitempty"`
+	Version                     int                 `json:"version"`
+	Appearance                  string              `json:"appearance,omitempty"`
+	Language                    string              `json:"language,omitempty"`
+	Layout                      *Layout             `json:"layout,omitempty"`
+	LastSQLitePath              string              `json:"last_sqlite_path,omitempty"`
+	RecentSQLitePaths           []string            `json:"recent_sqlite_paths,omitempty"`
+	RecentConnectionIDs         []string            `json:"recent_connection_ids,omitempty"`
+	SQLiteProfiles              []SQLiteProfile     `json:"sqlite_profiles,omitempty"`
+	ConnectionProfiles          []ConnectionProfile `json:"connection_profiles,omitempty"`
+	QueryHistoryEnabled         bool                `json:"query_history_enabled,omitempty"`
+	QueryHistory                []QueryHistoryEntry `json:"query_history,omitempty"`
+	QueryDraftsEnabled          bool                `json:"query_drafts_enabled,omitempty"`
+	QueryDrafts                 []QueryDraft        `json:"query_drafts,omitempty"`
+	ActiveQueryDraft            int                 `json:"active_query_draft,omitempty"`
+	SkipTableChangeConfirmation bool                `json:"skip_table_change_confirmation,omitempty"`
+	UpdateCheckIntervalHours    int                 `json:"update_check_interval_hours,omitempty"`
+	Interface                   InterfaceSettings   `json:"interface,omitempty"`
+	AIProviders                 []AIProvider        `json:"ai_providers,omitempty"`
+	ActiveAIProviderID          string              `json:"active_ai_provider_id,omitempty"`
+	AI                          AISettings          `json:"ai,omitempty"`
 }
 
 // QueryHistoryEntry is an explicitly opted-in local record of a SQL execution.
@@ -90,14 +91,15 @@ type SQLiteProfile struct {
 
 // Store serializes updates and persists only non-secret preferences.
 type Store struct {
-	mu                     sync.Mutex
-	dir                    string
-	settings               Settings
-	revision               uint64
-	queryHistoryRevision   uint64
-	queryDraftsRevision    uint64
-	interfaceRevision      uint64
-	updateIntervalRevision uint64
+	mu                              sync.Mutex
+	dir                             string
+	settings                        Settings
+	revision                        uint64
+	queryHistoryRevision            uint64
+	queryDraftsRevision             uint64
+	interfaceRevision               uint64
+	tableChangeConfirmationRevision uint64
+	updateIntervalRevision          uint64
 }
 
 func Open() (*Store, error) {
