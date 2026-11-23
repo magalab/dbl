@@ -289,7 +289,7 @@ func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterNa
 	const query = `
 		WITH objects AS (
 			SELECT n.nspname AS schema_name, n.nspname AS object_name,
-			       'schema'::text AS object_type, ''::text AS definition
+			       'schema'::text AS object_type, ''::text AS definition, ''::text AS table_name
 			FROM pg_catalog.pg_namespace AS n
 			WHERE n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
 			UNION ALL
@@ -300,7 +300,8 @@ func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterNa
 			           WHEN 'S' THEN 'sequence'::text
 			           ELSE 'table'::text
 			       END AS object_type,
-			       CASE WHEN c.relkind IN ('v', 'm') THEN pg_catalog.pg_get_viewdef(c.oid, true) ELSE ''::text END AS definition
+			       CASE WHEN c.relkind IN ('v', 'm') THEN pg_catalog.pg_get_viewdef(c.oid, true) ELSE ''::text END AS definition,
+			       ''::text AS table_name
 			FROM pg_catalog.pg_class AS c
 			JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
 			WHERE c.relkind IN ('r', 'p', 'f', 'v', 'm', 'S')
@@ -309,7 +310,7 @@ func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterNa
 			SELECT n.nspname AS schema_name,
 			       p.proname || '(' || pg_catalog.pg_get_function_identity_arguments(p.oid) || ')' AS object_name,
 			       CASE WHEN pg_catalog.to_jsonb(p)->>'prokind' = 'p' THEN 'procedure'::text ELSE 'function'::text END AS object_type,
-			       pg_catalog.pg_get_functiondef(p.oid) AS definition
+			       pg_catalog.pg_get_functiondef(p.oid) AS definition, ''::text AS table_name
 			FROM pg_catalog.pg_proc AS p
 			JOIN pg_catalog.pg_namespace AS n ON n.oid = p.pronamespace
 			WHERE NOT COALESCE((pg_catalog.to_jsonb(p)->>'proisagg')::boolean, false)
@@ -317,7 +318,7 @@ func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterNa
 			  AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
 			UNION ALL
 			SELECT n.nspname AS schema_name, t.typname AS object_name,
-			       'type'::text AS object_type, ''::text AS definition
+			       'type'::text AS object_type, ''::text AS definition, ''::text AS table_name
 			FROM pg_catalog.pg_type AS t
 			JOIN pg_catalog.pg_namespace AS n ON n.oid = t.typnamespace
 			WHERE t.typtype IN ('d', 'e', 'r', 'm') AND t.typisdefined
@@ -326,12 +327,34 @@ func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterNa
 			UNION ALL
 			SELECT n.nspname AS schema_name, e.extname AS object_name,
 			       'extension'::text AS object_type,
-			       'CREATE EXTENSION IF NOT EXISTS ' || pg_catalog.quote_ident(e.extname) || ';' AS definition
+			       'CREATE EXTENSION IF NOT EXISTS ' || pg_catalog.quote_ident(e.extname) || ';' AS definition,
+			       ''::text AS table_name
 			FROM pg_catalog.pg_extension AS e
 			JOIN pg_catalog.pg_namespace AS n ON n.oid = e.extnamespace
 			WHERE n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
+			UNION ALL
+			SELECT n.nspname AS schema_name, t.tgname AS object_name,
+			       'trigger'::text AS object_type, pg_catalog.pg_get_triggerdef(t.oid, true) AS definition,
+			       c.relname AS table_name
+			FROM pg_catalog.pg_trigger AS t
+			JOIN pg_catalog.pg_class AS c ON c.oid = t.tgrelid
+			JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+			WHERE NOT t.tgisinternal AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
+			UNION ALL
+			SELECT ''::text AS schema_name, et.evtname AS object_name,
+			       'event_trigger'::text AS object_type,
+			       'CREATE EVENT TRIGGER ' || pg_catalog.quote_ident(et.evtname) || ' ON ' || et.evtevent ||
+			       CASE WHEN et.evttags IS NULL OR pg_catalog.array_length(et.evttags, 1) IS NULL THEN '' ELSE
+			           ' WHEN TAG IN (' || pg_catalog.array_to_string(ARRAY(
+			               SELECT pg_catalog.quote_literal(tag) FROM pg_catalog.unnest(et.evttags) AS event_tags(tag)
+			           ), ', ') || ')'
+			       END || ' EXECUTE PROCEDURE ' || pg_catalog.quote_ident(pn.nspname) || '.' || pg_catalog.quote_ident(p.proname) || '();' AS definition,
+			       ''::text AS table_name
+			FROM pg_catalog.pg_event_trigger AS et
+			JOIN pg_catalog.pg_proc AS p ON p.oid = et.evtfoid
+			JOIN pg_catalog.pg_namespace AS pn ON pn.oid = p.pronamespace
 		)
-		SELECT schema_name, object_name, object_type, definition
+		SELECT schema_name, object_name, object_type, definition, table_name
 		FROM objects
 		WHERE schema_name > $1
 		   OR (schema_name = $1 AND object_type > $2)
@@ -346,7 +369,7 @@ func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterNa
 	objects := make([]connection.Object, 0, limit+1)
 	for rows.Next() {
 		var object connection.Object
-		if err := rows.Scan(&object.Schema, &object.Name, &object.Type, &object.SQL); err != nil {
+		if err := rows.Scan(&object.Schema, &object.Name, &object.Type, &object.SQL, &object.TableName); err != nil {
 			return connection.ObjectPage{}, redactError("read PostgreSQL object metadata", err, store.config.Password)
 		}
 		objects = append(objects, object)

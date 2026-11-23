@@ -86,9 +86,10 @@ func (app *workbench) sqlObjectContextMenuForConnection(menu *ui.Menu, connectio
 			app.inspectObject(object)
 		}
 	}
-	if menu.Item("⎘  " + app.localized("复制结构 SQL")).Disabled(strings.TrimSpace(object.SQL) == "").Chosen() {
+	driver := sqlObjectDriverForConnection(app, connectionID)
+	if menu.Item("⎘  " + app.localized("复制结构 SQL")).Disabled(objectDefinitionSQLForDriver(app, driver, object) == "").Chosen() {
 		if activate() {
-			mygo.Clipboard.WriteText(objectDefinitionSQL(app, object))
+			mygo.Clipboard.WriteText(objectDefinitionSQLForDriver(app, app.openedDriver, object))
 		}
 	}
 	menu.Separator()
@@ -155,11 +156,19 @@ func tableSQLTemplate(app *workbench, object connection.Object, kind string) str
 }
 
 func objectDefinitionSQL(app *workbench, object connection.Object) string {
+	return objectDefinitionSQLForDriver(app, app.openedDriver, object)
+}
+
+func objectDefinitionSQLForDriver(app *workbench, driver connection.Driver, object connection.Object) string {
 	definition := strings.TrimSpace(object.SQL)
 	if definition == "" {
 		return ""
 	}
-	if app.openedDriver == connection.DriverPostgreSQL && (object.Type == "view" || object.Type == "materialized_view") || app.openedDriver == connection.DriverMySQL && object.Type == "view" {
+	if driver == connection.DriverMySQL && (object.Type == "procedure" || object.Type == "function" || object.Type == "trigger" || object.Type == "event") {
+		// information_schema exposes body fragments, not executable CREATE statements.
+		return ""
+	}
+	if driver == connection.DriverPostgreSQL && (object.Type == "view" || object.Type == "materialized_view") || driver == connection.DriverMySQL && object.Type == "view" {
 		name := app.quoteIdentifier(object.Name)
 		if object.Schema != "" {
 			name = app.quoteIdentifier(object.Schema) + "." + name
@@ -170,6 +179,24 @@ func objectDefinitionSQL(app *workbench, object connection.Object) string {
 		return "CREATE OR REPLACE VIEW " + name + " AS\n" + strings.TrimSuffix(definition, ";") + ";\n"
 	}
 	return definition
+}
+
+func sqlObjectDriverForConnection(app *workbench, connectionID string) connection.Driver {
+	if connectionID == "" || connectionID == app.openedConnectionID {
+		return app.openedDriver
+	}
+	if live, ok := app.liveConnections[connectionID]; ok && live.connection != nil {
+		return live.connection.Driver()
+	}
+	for _, driver := range []connection.Driver{
+		connection.DriverPostgreSQL, connection.DriverMySQL, connection.DriverSQLite,
+		connection.DriverMongoDB, connection.DriverRedis, connection.DriverEtcd,
+	} {
+		if strings.HasPrefix(connectionID, string(driver)+":") {
+			return driver
+		}
+	}
+	return app.openedDriver
 }
 
 func tableDDLQuery(app *workbench, object connection.Object) string {

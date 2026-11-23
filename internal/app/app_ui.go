@@ -135,6 +135,7 @@ func (app *workbench) view(c *ui.Context) {
 		app.showRedisAliasEditor = false
 	}
 	app.redisKeyEditorModal(c)
+	app.savedQueryEditorModal(c)
 	app.etcdCreateKeyModal(c)
 	app.etcdGrantLeaseModal(c)
 	app.confirmationModal(c)

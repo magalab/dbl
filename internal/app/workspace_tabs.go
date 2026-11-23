@@ -37,6 +37,23 @@ func (app *workbench) workspaceTabs(c *ui.Context) {
 						}
 					}
 					title = app.localized(title)
+					if workspace.mysqlUserManager || workspace.postgresRoleManager {
+						connectionName := ""
+						if live, ok := app.liveConnections[workspace.queryConnectionID]; ok {
+							connectionName = live.profile.Name
+						}
+						if connectionName == "" {
+							for _, profile := range app.connectionProfiles {
+								if profileConnectionID(profile) == workspace.queryConnectionID {
+									connectionName = profile.Name
+									break
+								}
+							}
+						}
+						if connectionName != "" {
+							title += " · " + connectionName
+						}
+					}
 					if workspace.dataView && (len(workspace.dataChanges) > 0 || workspace.dataCellEditing || app.dataInsertHasDraft(workspace)) {
 						title += " *"
 					}
@@ -58,6 +75,9 @@ func (app *workbench) workspaceTabs(c *ui.Context) {
 							switch {
 							case workspace.connectionView:
 								icon, _, _ = databaseicons.Icon(string(workspace.connectionDriver))
+							case workspace.mysqlUserManager || workspace.postgresRoleManager:
+								icon = treeItemIcons["users"]
+								iconColor = treeItemIconColors["users"]
 							case workspace.dataView:
 								icon = treeItemIcons["table"]
 								if workspace.dataObject.Type == "view" {

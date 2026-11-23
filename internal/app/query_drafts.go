@@ -18,7 +18,7 @@ type queryDraftObservation struct {
 func (app *workbench) queryDraftObservation() []queryDraftObservation {
 	var result []queryDraftObservation
 	for _, workspace := range app.workspaces {
-		if !isSQLQueryWorkspace(workspace) || workspace.implicitQuery {
+		if !isSQLQueryWorkspace(workspace) || workspace.implicitQuery || workspace.mysqlUserManager || workspace.postgresRoleManager {
 			continue
 		}
 		result = append(result, queryDraftObservation{
@@ -32,7 +32,7 @@ func (app *workbench) queryDraftObservation() []queryDraftObservation {
 
 func (app *workbench) queryDraftSnapshot() (drafts []preferences.QueryDraft, active, skipped int) {
 	for _, workspace := range app.workspaces {
-		if !isSQLQueryWorkspace(workspace) || workspace.implicitQuery {
+		if !isSQLQueryWorkspace(workspace) || workspace.implicitQuery || workspace.mysqlUserManager || workspace.postgresRoleManager {
 			continue
 		}
 		if workspace.query.Buffer.Len() > preferences.MaxQueryDraftSQLBytes || len(drafts) >= preferences.MaxQueryDrafts {

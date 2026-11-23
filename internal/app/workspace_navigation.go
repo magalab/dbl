@@ -110,6 +110,12 @@ func (app *workbench) activateWorkspace(index int) {
 	}
 	app.sqliteOverview = false
 	workspace := app.workspaces[index]
+	if app.activeQuery != nil && app.activeQuery.mysqlUserManager && app.activeQuery != workspace {
+		clearMySQLUserWorkspaceSecrets(app.activeQuery)
+	}
+	if app.activeQuery != nil && app.activeQuery.postgresRoleManager && app.activeQuery != workspace {
+		clearPostgresRoleWorkspaceSecrets(app.activeQuery)
+	}
 	targetConnectionID := workspaceConnectionID(workspace)
 	connectionAlreadyActive := targetConnectionID == app.openedConnectionID
 	reusedRedisOverview := app.redisOverview && connectionAlreadyActive && workspace.redisView
@@ -199,6 +205,18 @@ func isSQLQueryWorkspace(workspace *queryWorkspace) bool {
 	return workspace != nil && !workspace.connectionView && !workspace.dataView && !workspace.schemaView && !workspace.redisView
 }
 
+func (app *workbench) userManagerWorkspaceIndex(connectionID string, driver connection.Driver) int {
+	for index, workspace := range app.workspaces {
+		if workspace.queryConnectionID != connectionID {
+			continue
+		}
+		if (driver == connection.DriverMySQL && workspace.mysqlUserManager) || (driver == connection.DriverPostgreSQL && workspace.postgresRoleManager) {
+			return index
+		}
+	}
+	return -1
+}
+
 func (app *workbench) canBindActiveQuery(connectionID string) bool {
 	return isSQLQueryWorkspace(app.activeQuery) && (app.activeQuery.queryConnectionID == "" || app.activeQuery.queryConnectionID == connectionID)
 }
@@ -208,6 +226,12 @@ func (app *workbench) closeWorkspace(index int) {
 		return
 	}
 	workspace := app.workspaces[index]
+	if workspace.mysqlUserManager {
+		clearMySQLUserWorkspaceSecrets(workspace)
+	}
+	if workspace.postgresRoleManager {
+		clearPostgresRoleWorkspaceSecrets(workspace)
+	}
 	if workspace.dataView {
 		if workspace.dataCellEditing {
 			app.applyDataCellEdit(workspace)

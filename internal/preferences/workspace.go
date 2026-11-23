@@ -5,10 +5,13 @@ import (
 	"math"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 const MaxQueryDrafts = 16
 const MaxQueryDraftSQLBytes = 256 << 10
+const MaxSavedQueries = 100
+const MaxSavedQuerySQLBytes = 64 << 10
 
 // QueryDraft stores editor content and connection metadata, never live sessions
 // or results. ConnectionID is an opaque profile identity or a local SQLite path.
@@ -16,6 +19,14 @@ type QueryDraft struct {
 	Title        string `json:"title"`
 	SQL          string `json:"sql"`
 	ConnectionID string `json:"connection_id,omitempty"`
+	Namespace    string `json:"namespace,omitempty"`
+}
+
+// SavedQuery stores a user-managed SQL snippet for one local connection.
+type SavedQuery struct {
+	Name         string `json:"name"`
+	SQL          string `json:"sql"`
+	ConnectionID string `json:"connection_id"`
 	Namespace    string `json:"namespace,omitempty"`
 }
 
@@ -31,6 +42,47 @@ type InterfaceSettings struct {
 func validQueryDraft(draft QueryDraft) bool {
 	return len(draft.SQL) <= MaxQueryDraftSQLBytes && len(draft.Title) <= 256 &&
 		len(draft.ConnectionID) <= 8192 && len(draft.Namespace) <= 1024
+}
+
+func validSavedQuery(query SavedQuery) bool {
+	return strings.TrimSpace(query.Name) != "" && utf8.RuneCountInString(query.Name) <= 256 &&
+		!strings.ContainsFunc(query.Name, unicode.IsControl) && strings.TrimSpace(query.SQL) != "" &&
+		len(query.SQL) <= MaxSavedQuerySQLBytes && len(query.ConnectionID) > 0 &&
+		len(query.ConnectionID) <= 8192 && len(query.Namespace) <= 1024
+}
+
+// SetSavedQueries persists only the saved-query collection. The revision fences
+// stale asynchronous writes without replacing unrelated preference fields.
+func (store *Store) SetSavedQueries(queries []SavedQuery, revision uint64) error {
+	if len(queries) > MaxSavedQueries {
+		return errors.New("too many saved queries")
+	}
+	seen := make(map[string]struct{}, len(queries))
+	for _, query := range queries {
+		if !validSavedQuery(query) {
+			return errors.New("saved query is invalid or exceeds its storage limit")
+		}
+		key := query.ConnectionID + "\x00" + strings.ToLower(strings.TrimSpace(query.Name))
+		if _, exists := seen[key]; exists {
+			return errors.New("saved query names must be unique per connection")
+		}
+		seen[key] = struct{}{}
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if revision <= store.savedQueriesRevision {
+		return nil
+	}
+	settings := store.settings
+	settings.SavedQueries = append([]SavedQuery(nil), queries...)
+	if err := writeSettings(store.dir, settings); err != nil {
+		return err
+	}
+	store.settings, store.savedQueriesRevision = settings, revision
+	if revision > store.revision {
+		store.revision = revision
+	}
+	return nil
 }
 
 // SetQueryDrafts merges only this feature's fields so asynchronous saves cannot
@@ -133,6 +185,21 @@ func (store *Store) SetSkipTableChangeConfirmation(skip bool, revision uint64) e
 
 func normalizeWorkspaceSettings(settings Settings) Settings {
 	settings.Interface = normalizeInterface(settings.Interface)
+	savedQueries := make([]SavedQuery, 0, min(len(settings.SavedQueries), MaxSavedQueries))
+	seenSavedQueries := make(map[string]struct{}, len(settings.SavedQueries))
+	for _, query := range settings.SavedQueries {
+		if !validSavedQuery(query) || len(savedQueries) == MaxSavedQueries {
+			continue
+		}
+		key := query.ConnectionID + "\x00" + strings.ToLower(strings.TrimSpace(query.Name))
+		if _, exists := seenSavedQueries[key]; exists {
+			continue
+		}
+		seenSavedQueries[key] = struct{}{}
+		query.Name = strings.TrimSpace(query.Name)
+		savedQueries = append(savedQueries, query)
+	}
+	settings.SavedQueries = savedQueries
 	if !settings.QueryDraftsEnabled {
 		settings.QueryDrafts, settings.ActiveQueryDraft = nil, 0
 		return settings

@@ -178,6 +178,48 @@ func (app *workbench) workspace(c *ui.Context) {
 			app.redisWorkspace(c)
 			return
 		}
+		if app.activeQuery != nil && app.activeQuery.postgresRoleManager {
+			if app.store == nil || app.openedDriver != connection.DriverPostgreSQL || app.openedConnectionID != app.activeQuery.queryConnectionID {
+				ui.Column(c).Fill().Justify(ui.Center).AlignItems(ui.Center).Gap(8).Children(func() {
+					ui.Text(c, app.localized("PostgreSQL 角色面板需要连接对应数据库。"))
+					for _, profile := range app.connectionProfiles {
+						if profileConnectionID(profile) != app.activeQuery.queryConnectionID {
+							continue
+						}
+						reconnect := iconPrimaryButton(c, app.localized("重新连接"), actionIcons["refresh"])
+						reconnect.Disabled(app.busy || app.exporting || app.dialogOpen)
+						if reconnect.Clicked() {
+							app.openSavedProfile(profile)
+						}
+						break
+					}
+				})
+				return
+			}
+			app.postgresRoleManagerWorkspace(c, app.activeQuery)
+			return
+		}
+		if app.activeQuery != nil && app.activeQuery.mysqlUserManager {
+			if app.store == nil || app.openedDriver != connection.DriverMySQL || app.openedConnectionID != app.activeQuery.queryConnectionID {
+				ui.Column(c).Fill().Justify(ui.Center).AlignItems(ui.Center).Gap(8).Children(func() {
+					ui.Text(c, app.localized("MySQL 用户面板需要连接对应数据库。"))
+					for _, profile := range app.connectionProfiles {
+						if profileConnectionID(profile) != app.activeQuery.queryConnectionID {
+							continue
+						}
+						reconnect := iconPrimaryButton(c, app.localized("重新连接"), actionIcons["refresh"])
+						reconnect.Disabled(app.busy || app.exporting || app.dialogOpen)
+						if reconnect.Clicked() {
+							app.openSavedProfile(profile)
+						}
+						break
+					}
+				})
+				return
+			}
+			app.mysqlUserManagerWorkspace(c, app.activeQuery)
+			return
+		}
 		if app.store != nil && !app.queryWorkspaceRequested {
 			app.sqlConnectionOverview(c)
 			return
@@ -248,6 +290,14 @@ func (app *workbench) workspace(c *ui.Context) {
 					executeButton.Disabled(app.busy || app.exporting || app.dialogOpen)
 					if executeButton.Clicked() {
 						app.executeSQL()
+					}
+				}
+				if isSavedQueryConnectionID(app.activeQuery.queryConnectionID) {
+					saveQuery := iconButton(c, app.localized("保存到查询"), actionIcons["save"])
+					saveQuery.Size(32, 32).Padding(5)
+					saveQuery.Disabled(app.busy || app.exporting || app.dialogOpen || app.savedQuerySaving || app.activeQuery.query.Buffer.Len() == 0)
+					if saveQuery.Clicked() {
+						app.saveActiveSQLQuery()
 					}
 				}
 			}

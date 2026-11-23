@@ -400,6 +400,21 @@ func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterNa
 			LEFT JOIN information_schema.views AS views
 			  ON views.table_schema = tables.table_schema AND views.table_name = tables.table_name
 			WHERE tables.table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+			UNION ALL
+			SELECT routine_schema, routine_name,
+			       CASE WHEN routine_type = 'PROCEDURE' THEN 'procedure' ELSE 'function' END,
+			       COALESCE(routine_definition, '')
+			FROM information_schema.routines
+			WHERE routine_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+			UNION ALL
+			SELECT trigger_schema, trigger_name, 'trigger',
+			       CONCAT('ON ', event_object_table, '\n', action_statement)
+			FROM information_schema.triggers
+			WHERE trigger_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+			UNION ALL
+			SELECT event_schema, event_name, 'event', COALESCE(event_definition, '')
+			FROM information_schema.events
+			WHERE event_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
 		) AS objects
 		WHERE CAST(schema_name AS BINARY) > CAST(? AS BINARY)
 		   OR (CAST(schema_name AS BINARY) = CAST(? AS BINARY) AND CAST(object_type AS BINARY) > CAST(? AS BINARY))

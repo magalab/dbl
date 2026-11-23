@@ -36,7 +36,7 @@ func Run() {
 			Height:        820,
 			Maximized:     workbench.interfaceSettings.StartupMode == "maximized",
 			FullScreen:    workbench.interfaceSettings.StartupMode == "fullscreen",
-			TitleBarStyle: mygo.TitleBarHiddenInset,
+			TitleBarStyle: mygo.TitleBarHidden,
 			Content:       ui.View(workbench.view),
 		})
 		workbench.window.OnClose(func(event *mygo.CloseEvent) {

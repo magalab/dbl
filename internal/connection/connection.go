@@ -261,10 +261,11 @@ type Connector interface {
 }
 
 type Object struct {
-	Schema string
-	Name   string
-	Type   string
-	SQL    string
+	Schema    string
+	Name      string
+	Type      string
+	TableName string
+	SQL       string
 }
 
 type ObjectPage struct {

@@ -207,8 +207,16 @@ func (app *workbench) profileSQLNamespaces(c *ui.Context, profile preferences.Co
 				app.postgresSchemaObjectTree(c, id, namespace, snapshot.objects, depth+1)
 				return
 			}
+			if profile.Driver == preferences.DriverMySQL {
+				app.mysqlObjectTree(c, id, namespace, snapshot.objects, depth+1)
+				return
+			}
+			if profile.Driver == preferences.DriverSQLite {
+				app.sqliteObjectTree(c, id, namespace, snapshot.objects, depth+1)
+				return
+			}
 			for _, object := range snapshot.objects {
-				if object.Type == "schema" || (namespace != "" && object.Schema != namespace) {
+				if !sqlObjectMatchesNamespace(string(profile.Driver), namespace, object) {
 					continue
 				}
 				object := object
@@ -228,8 +236,27 @@ func (app *workbench) profileSQLNamespaces(c *ui.Context, profile preferences.Co
 			}
 		}
 	}
-	if profile.Driver == preferences.DriverPostgreSQL {
-		app.postgresUsersTreeItem(c, id, depth)
+	switch profile.Driver {
+	case preferences.DriverPostgreSQL:
+		app.postgresGlobalObjectTree(c, id, snapshot.namespace, snapshot.objects, depth)
+		app.sqlUsersTreeItem(c, id, connection.DriverPostgreSQL, snapshot.namespace, depth)
+	case preferences.DriverMySQL:
+		app.sqlUsersTreeItem(c, id, connection.DriverMySQL, snapshot.namespace, depth)
+	}
+	if snapshot.objectsError != "" {
+		ui.Text(c, app.localized("加载数据库对象失败：")+snapshot.objectsError).PaddingStart(18).TextColor(c.Theme().Warning)
+	}
+	if snapshot.objectsHasMore {
+		if live, ok := app.liveConnections[id]; ok && live.treeLoading {
+			app.connectionTreeLoadingStatus(c, "正在加载更多数据库对象…")
+		} else {
+			item := ui.TreeItem(c, treeIconPlaceholder+app.localized("加载更多数据库对象"), nil, nil)
+			item = connectionTreeDecorations(c, item, "", "", depth, false, false)
+			item.Disabled(app.busy || app.exporting || app.dialogOpen)
+			if item.Clicked() {
+				app.loadMoreProfileSQLObjects(id)
+			}
+		}
 	}
 }
 
@@ -263,6 +290,10 @@ func (app *workbench) ensureProfileTreeSnapshot(profile preferences.ConnectionPr
 			page, pageErr := store.Objects(ctx, "", "", "", sqliteObjectPageSize)
 			err = pageErr
 			snapshot.objects = page.Objects
+			snapshot.objectCursorSchema = page.NextSchema
+			snapshot.objectCursorType = page.NextType
+			snapshot.objectCursorName = page.NextName
+			snapshot.objectsHasMore = page.HasMore
 			if err == nil {
 				snapshot.namespaces, _ = store.Namespaces(ctx)
 				snapshot.namespace, _ = store.CurrentNamespace(ctx)
@@ -294,6 +325,49 @@ func (app *workbench) ensureProfileTreeSnapshot(profile preferences.ConnectionPr
 				app.reportError("连接失败", err)
 			}
 			app.liveConnections[id] = live
+		})
+	}()
+}
+
+func (app *workbench) loadMoreProfileSQLObjects(connectionID string) {
+	if app.busy || app.exporting || app.dialogOpen {
+		return
+	}
+	live, ok := app.liveConnections[connectionID]
+	if !ok || live.treeLoading || !live.tree.objectsHasMore {
+		return
+	}
+	store, ok := live.connection.(connection.SQL)
+	if !ok {
+		return
+	}
+	afterSchema := live.tree.objectCursorSchema
+	afterType := live.tree.objectCursorType
+	afterName := live.tree.objectCursorName
+	live.treeLoading = true
+	live.tree.objectsError = ""
+	app.liveConnections[connectionID] = live
+	ctx, cancel := app.withTaskTimeout(5 * time.Second)
+	go func() {
+		defer cancel()
+		page, err := store.Objects(ctx, afterSchema, afterType, afterName, sqliteObjectPageSize)
+		app.window.Update(func() {
+			current, exists := app.liveConnections[connectionID]
+			if !exists || current.connection != live.connection {
+				return
+			}
+			current.treeLoading = false
+			if err != nil {
+				current.tree.objectsError = safeerror.Display(err)
+			} else {
+				current.tree.objects = append(current.tree.objects, page.Objects...)
+				current.tree.objectCursorSchema = page.NextSchema
+				current.tree.objectCursorType = page.NextType
+				current.tree.objectCursorName = page.NextName
+				current.tree.objectsHasMore = page.HasMore && len(page.Objects) > 0
+				current.tree.objectsError = ""
+			}
+			app.liveConnections[connectionID] = current
 		})
 	}()
 }

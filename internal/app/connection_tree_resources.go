@@ -92,7 +92,10 @@ func (app *workbench) sqlConnectionTree(c *ui.Context, depth int) {
 	if len(app.sqlNamespaces) == 0 {
 		app.sqlObjectTree(c, "", depth)
 		if app.openedDriver == connection.DriverPostgreSQL {
-			app.postgresUsersTreeItem(c, app.openedConnectionID, depth)
+			app.sqlGlobalObjectTree(c, app.openedConnectionID, app.sqlNamespace, app.objects, depth)
+		}
+		if app.openedDriver == connection.DriverPostgreSQL || app.openedDriver == connection.DriverMySQL {
+			app.sqlUsersTreeItem(c, app.openedConnectionID, app.openedDriver, app.sqlNamespace, depth)
 		}
 		return
 	}
@@ -110,28 +113,29 @@ func (app *workbench) sqlConnectionTree(c *ui.Context, depth int) {
 		}
 	}
 	if app.openedDriver == connection.DriverPostgreSQL {
-		app.postgresUsersTreeItem(c, app.openedConnectionID, depth)
+		app.sqlGlobalObjectTree(c, app.openedConnectionID, app.sqlNamespace, app.objects, depth)
+	}
+	if app.openedDriver == connection.DriverPostgreSQL || app.openedDriver == connection.DriverMySQL {
+		app.sqlUsersTreeItem(c, app.openedConnectionID, app.openedDriver, app.sqlNamespace, depth)
 	}
 }
 
-func (app *workbench) postgresUsersTreeItem(c *ui.Context, connectionID string, depth int) {
+func (app *workbench) sqlUsersTreeItem(c *ui.Context, connectionID string, driver connection.Driver, namespace string, depth int) {
+	if driver != connection.DriverPostgreSQL && driver != connection.DriverMySQL {
+		return
+	}
 	item := ui.TreeItem(c, treeIconPlaceholder+app.localized("用户与权限"), nil, nil)
 	item = connectionTreeDecorations(c, item, "", "users", depth, false, false)
 	if !item.Clicked() {
 		return
 	}
-	if connectionID != "" && connectionID != app.openedConnectionID {
-		if !app.activateLiveConnectionForWorkspace(connectionID) {
-			return
-		}
-		app.activateConnectionWorkspace(connectionID)
-	}
-	statement := "SELECT rolname, rolsuper, rolinherit, rolcreaterole, rolcreatedb, rolcanlogin FROM pg_catalog.pg_roles ORDER BY rolname;\n"
-	if !app.openSQLQuery(statement) {
-		app.status = app.localized("无法打开用户与权限查询工作区。 ")
+	if driver == connection.DriverMySQL {
+		app.openMySQLUserManager(connectionID, namespace)
 		return
 	}
-	app.status = app.localized("已打开用户与权限查询草稿。")
+	if driver == connection.DriverPostgreSQL {
+		app.openPostgresRoleManager(connectionID, namespace)
+	}
 }
 
 func (app *workbench) sqlObjectTree(c *ui.Context, namespace string, depth int) {
@@ -139,16 +143,131 @@ func (app *workbench) sqlObjectTree(c *ui.Context, namespace string, depth int) 
 		app.postgresSchemaObjectTree(c, app.openedConnectionID, namespace, app.objects, depth)
 		return
 	}
+	if app.openedDriver == connection.DriverSQLite {
+		app.sqliteObjectTree(c, app.openedConnectionID, namespace, app.objects, depth)
+		return
+	}
+	if app.openedDriver == connection.DriverMySQL {
+		app.mysqlObjectTree(c, app.openedConnectionID, namespace, app.objects, depth)
+		return
+	}
 	for _, object := range app.objects {
-		if object.Type == "schema" {
-			continue
-		}
-		if namespace != "" && object.Schema != namespace {
+		if !sqlObjectMatchesNamespace(string(app.openedDriver), namespace, object) {
 			continue
 		}
 		object := object
 		app.sqlObjectTreeItem(c, app.openedConnectionID, object, depth)
 	}
+}
+
+func sqlObjectMatchesNamespace(driver, namespace string, object connection.Object) bool {
+	if object.Type == "schema" {
+		return false
+	}
+	if namespace == "" || object.Schema == namespace {
+		return true
+	}
+	// SQLite objects come from sqlite_schema without a schema name, while the
+	// tree exposes the primary database as the "main" namespace.
+	return driver == string(connection.DriverSQLite) && namespace == "main" && object.Schema == ""
+}
+
+func (app *workbench) sqliteObjectTree(c *ui.Context, connectionID, namespace string, objects []connection.Object, depth int) {
+	var tables, views, unownedTriggers []connection.Object
+	childrenByOwner := make(map[string][]connection.Object)
+	for _, object := range objects {
+		if !sqlObjectMatchesNamespace(string(connection.DriverSQLite), namespace, object) {
+			continue
+		}
+		switch object.Type {
+		case "table":
+			tables = append(tables, object)
+		case "view":
+			views = append(views, object)
+		case "index", "trigger":
+			if object.TableName != "" {
+				childrenByOwner[object.TableName] = append(childrenByOwner[object.TableName], object)
+			} else if object.Type == "trigger" {
+				unownedTriggers = append(unownedTriggers, object)
+			}
+		}
+	}
+
+	app.sqliteObjectCategory(c, connectionID, namespace, "表", "table", tables, childrenByOwner, depth)
+	app.sqliteObjectCategory(c, connectionID, namespace, "视图", "view", views, childrenByOwner, depth)
+	if len(unownedTriggers) > 0 {
+		app.sqliteObjectCategory(c, connectionID, namespace, "触发器", "trigger", unownedTriggers, nil, depth)
+	}
+	app.sqlSavedQueriesCategory(c, connectionID, namespace, depth, false)
+}
+
+func (app *workbench) sqliteObjectCategory(c *ui.Context, connectionID, namespace, label, typeName string, objects []connection.Object, childrenByOwner map[string][]connection.Object, depth int) {
+	displayLabel := fmt.Sprintf("%s %d", app.localized(label), len(objects))
+	open := app.connectionTreeState("sqlite-category:"+connectionID+":"+namespace+":"+typeName, false)
+	item := ui.TreeItem(c, treeIconPlaceholder+displayLabel, open, func() {
+		for _, object := range objects {
+			object := object
+			children := childrenByOwner[object.Name]
+			if len(children) == 0 {
+				app.sqlObjectTreeItem(c, connectionID, object, depth+1)
+				continue
+			}
+			app.sqlObjectTreeItemWithChildren(c, connectionID, object, depth+1, children,
+				"sqlite-object-children:"+connectionID+":"+namespace+":"+typeName+":"+object.Name)
+		}
+	})
+	item = connectionTreeDecorations(c, item, "", typeName, depth, false, false)
+	item.Clicked()
+}
+
+func (app *workbench) sqlSavedQueriesCategory(c *ui.Context, connectionID, namespace string, depth int, allNamespaces bool) {
+	var queries []preferences.SavedQuery
+	if app.preferences != nil {
+		for _, query := range app.preferences.Settings().SavedQueries {
+			if query.ConnectionID == connectionID && (allNamespaces || query.Namespace == namespace) {
+				queries = append(queries, query)
+			}
+		}
+	}
+	scopeKey := namespace
+	if allNamespaces {
+		scopeKey = "all"
+	}
+	open := app.connectionTreeState("sql-saved-queries:"+connectionID+":"+scopeKey, false)
+	item := ui.TreeItem(c, treeIconPlaceholder+app.localized("查询"), open, func() {
+		for _, query := range queries {
+			query := query
+			queryItem := ui.TreeItem(c, treeIconPlaceholder+query.Name, nil, nil).Tooltip(query.Name).ContextMenu(func(menu *ui.Menu) {
+				if menu.Item("✎  " + app.localized("编辑自定义查询")).Disabled(app.dialogOpen || app.savedQuerySaving).Chosen() {
+					app.openSavedQueryEditor(query.ConnectionID, query.Namespace, &query)
+				}
+				if menu.Item("⌫  " + app.localized("删除自定义查询")).Disabled(app.dialogOpen || app.savedQuerySaving).Chosen() {
+					app.confirmDeleteSavedQuery(query)
+				}
+			})
+			queryItem = connectionTreeDecorations(c, queryItem, "", "query", depth+1, false, false)
+			queryItem.Disabled(app.busy || app.exporting || app.dialogOpen || app.queryWorkspaceRequested && app.workspaceCount() >= maxWorkspaces)
+			if queryItem.Clicked() {
+				app.openSavedSQLQuery(query)
+			}
+		}
+	}).ContextMenu(func(menu *ui.Menu) {
+		if menu.Item("＋  " + app.localized("新建查询")).Disabled(app.busy || app.exporting || app.dialogOpen || app.savedQuerySaving).Chosen() {
+			app.newSQLQueryWorkspace(connectionID, namespace)
+		}
+	})
+	item = connectionTreeDecorations(c, item, "", "folder", depth, false, false)
+	if item.Hovered() || item.FocusWithin() {
+		item.Children(func() {
+			ui.Spacer(c)
+			add := iconButton(c, app.localized("新建查询"), actionIcons["add"]).Size(22, 22).Padding(3).BorderWidth(0).Background(ui.Transparent)
+			add.Disabled(app.busy || app.exporting || app.dialogOpen || app.savedQuerySaving)
+			if add.Clicked() {
+				app.newSQLQueryWorkspace(connectionID, namespace)
+			}
+		})
+	}
+	item.Clicked()
 }
 
 type postgresTreeCategory struct {
@@ -165,12 +284,15 @@ var postgresSchemaCategories = []postgresTreeCategory{
 	{label: "函数", typeName: "function", icon: "function"},
 	{label: "序列", typeName: "sequence", icon: "sequence"},
 	{label: "类型", typeName: "type", icon: "type"},
-	{label: "扩展", typeName: "extension", icon: "extension"},
-	{label: "事件触发器", typeName: "event_trigger", icon: "trigger"},
-	{label: "查询", typeName: "query", icon: "query"},
 }
 
 func (app *workbench) postgresSchemaObjectTree(c *ui.Context, connectionID, namespace string, objects []connection.Object, depth int) {
+	triggersByTable := make(map[string][]connection.Object)
+	for _, object := range objects {
+		if object.Schema == namespace && object.Type == "trigger" && object.TableName != "" {
+			triggersByTable[object.TableName] = append(triggersByTable[object.TableName], object)
+		}
+	}
 	for _, category := range postgresSchemaCategories {
 		category := category
 		var categoryObjects []connection.Object
@@ -179,23 +301,97 @@ func (app *workbench) postgresSchemaObjectTree(c *ui.Context, connectionID, name
 				categoryObjects = append(categoryObjects, object)
 			}
 		}
-		if len(categoryObjects) == 0 {
-			continue
+		children := map[string][]connection.Object(nil)
+		if category.typeName == "table" || category.typeName == "view" {
+			children = triggersByTable
 		}
-		label := app.localized(category.label)
-		open := app.connectionTreeState("category:"+connectionID+":"+namespace+":"+category.typeName, false)
-		item := ui.TreeItem(c, treeIconPlaceholder+label, open, func() {
-			for _, object := range categoryObjects {
-				app.sqlObjectTreeItem(c, connectionID, object, depth+1)
-			}
-		})
-		item = connectionTreeDecorations(c, item, "", category.icon, depth, false, false)
-		item.Clicked()
+		app.sqlObjectCategory(c, connectionID, namespace, "postgres-schema", category.label, category.typeName, category.icon, categoryObjects, children, depth)
 	}
 }
 
+var mysqlSchemaCategories = []postgresTreeCategory{
+	{label: "表", typeName: "table", icon: "table"},
+	{label: "视图", typeName: "view", icon: "view"},
+	{label: "存储过程", typeName: "procedure", icon: "query"},
+	{label: "函数", typeName: "function", icon: "function"},
+	{label: "触发器", typeName: "trigger", icon: "trigger"},
+	{label: "事件", typeName: "event", icon: "event"},
+}
+
+func (app *workbench) mysqlObjectTree(c *ui.Context, connectionID, namespace string, objects []connection.Object, depth int) {
+	for _, category := range mysqlSchemaCategories {
+		category := category
+		var categoryObjects []connection.Object
+		for _, object := range objects {
+			if object.Schema == namespace && object.Type == category.typeName {
+				categoryObjects = append(categoryObjects, object)
+			}
+		}
+		app.sqlObjectCategory(c, connectionID, namespace, "mysql-schema", category.label, category.typeName, category.icon, categoryObjects, nil, depth)
+	}
+	app.sqlSavedQueriesCategory(c, connectionID, namespace, depth, false)
+}
+
+func (app *workbench) sqlGlobalObjectTree(c *ui.Context, connectionID, defaultNamespace string, objects []connection.Object, depth int) {
+	if app.openedDriver != connection.DriverPostgreSQL {
+		return
+	}
+	app.postgresGlobalObjectTree(c, connectionID, defaultNamespace, objects, depth)
+}
+
+func (app *workbench) postgresGlobalObjectTree(c *ui.Context, connectionID, defaultNamespace string, objects []connection.Object, depth int) {
+	for _, category := range []postgresTreeCategory{
+		{label: "扩展", typeName: "extension", icon: "extension"},
+		{label: "事件触发器", typeName: "event_trigger", icon: "trigger"},
+	} {
+		category := category
+		var categoryObjects []connection.Object
+		for _, object := range objects {
+			if object.Type == category.typeName {
+				categoryObjects = append(categoryObjects, object)
+			}
+		}
+		app.sqlObjectCategory(c, connectionID, "global", "postgres-global", category.label, category.typeName, category.icon, categoryObjects, nil, depth)
+	}
+	app.sqlSavedQueriesCategory(c, connectionID, defaultNamespace, depth, true)
+}
+
+func (app *workbench) sqlObjectCategory(c *ui.Context, connectionID, namespace, prefix, label, typeName, icon string, objects []connection.Object, childrenByOwner map[string][]connection.Object, depth int) {
+	displayLabel := fmt.Sprintf("%s %d", app.localized(label), len(objects))
+	open := app.connectionTreeState(prefix+":"+connectionID+":"+namespace+":"+typeName, false)
+	item := ui.TreeItem(c, treeIconPlaceholder+displayLabel, open, func() {
+		for _, object := range objects {
+			object := object
+			children := childrenByOwner[object.Name]
+			if len(children) == 0 {
+				app.sqlObjectTreeItem(c, connectionID, object, depth+1)
+				continue
+			}
+			app.sqlObjectTreeItemWithChildren(c, connectionID, object, depth+1, children, prefix+":"+connectionID+":"+namespace+":"+typeName+":"+object.Name)
+		}
+	})
+	item = connectionTreeDecorations(c, item, "", icon, depth, false, false)
+	item.Clicked()
+}
+
 func (app *workbench) sqlObjectTreeItem(c *ui.Context, connectionID string, object connection.Object, depth int) {
-	item := ui.TreeItem(c, treeIconPlaceholder+object.Name, nil, nil).Tooltip(object.Name).Selected(qualifiedObjectName(object) == app.selectedObject).ContextMenu(func(menu *ui.Menu) {
+	app.sqlObjectTreeItemWithChildren(c, connectionID, object, depth, nil, "")
+}
+
+func (app *workbench) sqlObjectTreeItemWithChildren(c *ui.Context, connectionID string, object connection.Object, depth int, children []connection.Object, expansionKey string) {
+	var item ui.Element
+	if len(children) == 0 {
+		item = ui.TreeItem(c, treeIconPlaceholder+object.Name, nil, nil)
+	} else {
+		open := app.connectionTreeState(expansionKey, false)
+		item = ui.TreeItem(c, treeIconPlaceholder+object.Name, open, func() {
+			for _, child := range children {
+				child := child
+				app.sqlObjectTreeItem(c, connectionID, child, depth+1)
+			}
+		})
+	}
+	item = item.Tooltip(object.Name).Selected(qualifiedObjectName(object) == app.selectedObject).ContextMenu(func(menu *ui.Menu) {
 		app.sqlObjectContextMenuForConnection(menu, connectionID, object)
 	})
 	item = connectionTreeDecorations(c, item, "", sqlObjectIcon(object.Type), depth, false, false)
@@ -258,8 +454,12 @@ func sqlObjectIcon(kind string) string {
 		return "index"
 	case "trigger":
 		return "trigger"
-	case "function", "procedure":
+	case "procedure":
+		return "query"
+	case "function":
 		return "function"
+	case "event":
+		return "event"
 	case "sequence":
 		return "sequence"
 	case "type":

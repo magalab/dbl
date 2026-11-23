@@ -42,6 +42,7 @@ type Settings struct {
 	QueryDraftsEnabled          bool                `json:"query_drafts_enabled,omitempty"`
 	QueryDrafts                 []QueryDraft        `json:"query_drafts,omitempty"`
 	ActiveQueryDraft            int                 `json:"active_query_draft,omitempty"`
+	SavedQueries                []SavedQuery        `json:"saved_queries,omitempty"`
 	SkipTableChangeConfirmation bool                `json:"skip_table_change_confirmation,omitempty"`
 	UpdateCheckIntervalHours    int                 `json:"update_check_interval_hours,omitempty"`
 	Interface                   InterfaceSettings   `json:"interface,omitempty"`
@@ -97,6 +98,7 @@ type Store struct {
 	revision                        uint64
 	queryHistoryRevision            uint64
 	queryDraftsRevision             uint64
+	savedQueriesRevision            uint64
 	interfaceRevision               uint64
 	tableChangeConfirmationRevision uint64
 	updateIntervalRevision          uint64
@@ -432,6 +434,7 @@ func (store *Store) Settings() Settings {
 	settings.ConnectionProfiles = append([]ConnectionProfile(nil), settings.ConnectionProfiles...)
 	settings.QueryHistory = append([]QueryHistoryEntry(nil), settings.QueryHistory...)
 	settings.QueryDrafts = append([]QueryDraft(nil), settings.QueryDrafts...)
+	settings.SavedQueries = append([]SavedQuery(nil), settings.SavedQueries...)
 	settings.AIProviders = append([]AIProvider(nil), settings.AIProviders...)
 	return settings
 }

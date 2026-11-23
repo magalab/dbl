@@ -309,17 +309,19 @@ func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterNa
 	if limit > 1000 {
 		limit = 1000
 	}
+	typeOrder := `CASE type WHEN 'table' THEN 0 WHEN 'view' THEN 1 WHEN 'index' THEN 2 WHEN 'trigger' THEN 3 ELSE 4 END`
 	query := `
-		SELECT name, type, COALESCE(sql, '')
+		SELECT name, type, tbl_name, COALESCE(sql, '')
 		FROM sqlite_schema
 		WHERE type IN ('table', 'view', 'index', 'trigger')
 		  AND lower(substr(name, 1, 7)) <> 'sqlite_'`
 	args := make([]any, 0, 4)
 	if afterType != "" || afterName != "" {
-		query += ` AND (type > ? OR (type = ? AND name > ?))`
-		args = append(args, afterType, afterType, afterName)
+		query += ` AND (` + typeOrder + ` > ? OR (` + typeOrder + ` = ? AND name > ?))`
+		rank := sqliteObjectTypeOrder(afterType)
+		args = append(args, rank, rank, afterName)
 	}
-	query += ` ORDER BY type, name LIMIT ?`
+	query += ` ORDER BY ` + typeOrder + `, name LIMIT ?`
 	args = append(args, limit+1)
 	rows, err := store.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -330,7 +332,7 @@ func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterNa
 	objects := make([]Object, 0, limit+1)
 	for rows.Next() {
 		var object Object
-		if err := rows.Scan(&object.Name, &object.Type, &object.SQL); err != nil {
+		if err := rows.Scan(&object.Name, &object.Type, &object.TableName, &object.SQL); err != nil {
 			return ObjectPage{}, fmt.Errorf("read SQLite object metadata: %w", err)
 		}
 		objects = append(objects, object)
@@ -350,6 +352,21 @@ func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterNa
 		page.NextName = last.Name
 	}
 	return page, nil
+}
+
+func sqliteObjectTypeOrder(objectType string) int {
+	switch objectType {
+	case "table":
+		return 0
+	case "view":
+		return 1
+	case "index":
+		return 2
+	case "trigger":
+		return 3
+	default:
+		return 4
+	}
 }
 
 // Columns returns table metadata, including hidden and generated columns. The
