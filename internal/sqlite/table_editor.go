@@ -41,6 +41,36 @@ func (store *Store) ApplyTableChanges(ctx context.Context, object connection.Obj
 	return nil
 }
 
+func (store *Store) ImportTableRows(ctx context.Context, object connection.Object, changes []connection.TableChange) error {
+	if store == nil || store.db == nil {
+		return errors.New("SQLite connection is closed")
+	}
+	if object.Type != "table" || object.Name == "" || object.Schema != "" && object.Schema != "main" {
+		return errors.New("a valid SQLite base table is required")
+	}
+	if len(changes) == 0 || len(changes) > connection.MaxTableImportRows {
+		return fmt.Errorf("table import must contain 1 to %d rows", connection.MaxTableImportRows)
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin SQLite table import: %w", err)
+	}
+	defer tx.Rollback()
+	table := quoteSQLiteIdentifier(object.Name)
+	for _, change := range changes {
+		if change.Kind != connection.InsertRow {
+			return errors.New("table import accepts insert rows only")
+		}
+		if err := applySQLiteChange(ctx, tx, table, nil, change); err != nil {
+			return fmt.Errorf("import SQLite table rows: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit SQLite table import: %w", err)
+	}
+	return nil
+}
+
 func (store *Store) ApplySchemaChanges(ctx context.Context, statements []string) error {
 	if store == nil || store.db == nil {
 		return errors.New("SQLite connection is closed")
@@ -168,3 +198,4 @@ func sortedSQLiteKeys(values map[string]any) []string {
 }
 
 var _ connection.TableEditor = (*Store)(nil)
+var _ connection.TableImporter = (*Store)(nil)

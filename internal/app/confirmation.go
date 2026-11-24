@@ -42,8 +42,12 @@ func (app *workbench) confirmationModal(c *ui.Context) {
 		return
 	}
 	request := app.confirmation
+	dialogWidth := float32(480)
+	if len(request.fields) > 0 || len(request.detail) > 600 {
+		dialogWidth = 600
+	}
 	if ui.Modal(c, &app.confirmationOpen, func() {
-		ui.Column(c).Width(600).MaxWidthPercent(90).Padding(18).Gap(12).
+		ui.Column(c).Width(dialogWidth).MaxWidthPercent(90).Padding(18).Gap(12).
 			Background(c.Theme().Surface).Border(1, c.Theme().Border).Radius(c.Theme().Radius + 4).
 			Children(func() {
 				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
@@ -74,7 +78,7 @@ func (app *workbench) confirmationModal(c *ui.Context) {
 					})
 				}
 				if request.detail != "" {
-					ui.Scroll(c).Height(220).Children(func() {
+					ui.Scroll(c).MaxHeight(160).MinHeight(0).Children(func() {
 						ui.Text(c, request.detail).Selectable()
 					})
 				}

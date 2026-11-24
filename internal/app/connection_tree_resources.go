@@ -105,7 +105,7 @@ func (app *workbench) sqlConnectionTree(c *ui.Context, depth int) {
 		item := ui.TreeItem(c, treeIconPlaceholder+namespace, open, func() {
 			app.sqlObjectTree(c, namespace, depth+1)
 		}).Selected(namespace == app.sqlNamespace && app.selectedObject == "").ContextMenu(func(menu *ui.Menu) {
-			app.schemaContextMenu(menu, namespace)
+			app.schemaContextMenu(menu, app.openedConnectionID, app.openedDriver, namespace)
 		})
 		item = connectionTreeDecorations(c, item, "", "schema", depth, false, false)
 		if item.Clicked() && (app.openedDriver == connection.DriverPostgreSQL || app.openedDriver == connection.DriverMySQL) {

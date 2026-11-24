@@ -11,6 +11,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
+	"github.com/magalab/dbl/internal/connection"
 	"github.com/magalab/dbl/internal/preferences"
 	"github.com/magalab/dbl/internal/sqliteuri"
 )
@@ -26,6 +27,11 @@ func (app *workbench) connectionContextMenu(menu *ui.Menu, profile preferences.C
 	menu.Separator()
 	if menu.Item("＋  " + app.localized("新建查询")).Disabled(!app.canOpenProfileQuery(profile, connected)).Chosen() {
 		app.openProfileQuery(profile, "")
+	}
+	if connected && (profile.Driver == preferences.DriverMySQL || profile.Driver == preferences.DriverPostgreSQL) {
+		if menu.Item("＋  " + app.localized("新建数据库…")).Disabled(app.busy || app.exporting || app.dialogOpen || profile.ReadOnly).Chosen() {
+			app.openSQLDatabaseCreator(app.profileLiveSessionID(profile), connection.Driver(profile.Driver))
+		}
 	}
 	menu.Separator()
 	if menu.Item("↻  " + app.localized("刷新")).Disabled(!connected || app.busy || app.exporting || app.dialogOpen).Chosen() {
@@ -228,5 +234,35 @@ func (app *workbench) databaseContextMenu(menu *ui.Menu, database string) {
 	}
 	if menu.Item("ⓘ  " + app.localized("数据库信息")).Chosen() {
 		app.status = fmt.Sprintf("%s · %s", app.openedLabel, database)
+	}
+	menu.Separator()
+	menu.Submenu("⇩  "+app.localized("导出数据库"), func(submenu *ui.Menu) {
+		addSQLDatabaseExportOptions(app, submenu, "")
+	})
+}
+
+func (app *workbench) activeConnectionRootContextMenu(menu *ui.Menu) {
+	if app.openedDriver == connection.DriverMySQL || app.openedDriver == connection.DriverPostgreSQL {
+		if menu.Item("＋  " + app.localized("新建数据库…")).Disabled(app.busy || app.exporting || app.dialogOpen || app.openedReadOnly).Chosen() {
+			app.openSQLDatabaseCreator(app.openedConnectionID, app.openedDriver)
+		}
+	}
+	if app.openedDriver == connection.DriverSQLite || app.openedDriver == connection.DriverMySQL || app.openedDriver == connection.DriverPostgreSQL {
+		menu.Submenu("⇩  "+app.localized("导出数据库"), func(submenu *ui.Menu) {
+			scope := ""
+			if app.openedDriver == connection.DriverSQLite {
+				scope = "main"
+			} else if app.openedDriver == connection.DriverMySQL {
+				scope = app.sqlNamespace
+			}
+			addSQLDatabaseExportOptions(app, submenu, scope)
+		})
+	}
+	menu.Separator()
+	if menu.Item("＋  " + app.localized("新建查询")).Disabled(app.busy || app.exporting || app.dialogOpen || app.queryWorkspaceRequested && app.workspaceCount() >= maxWorkspaces).Chosen() {
+		app.openSQLQuery("")
+	}
+	if menu.Item("↻  " + app.localized("刷新")).Disabled(app.busy || app.exporting || app.dialogOpen).Chosen() {
+		app.refreshCurrentConnection()
 	}
 }

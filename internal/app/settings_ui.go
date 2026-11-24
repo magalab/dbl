@@ -21,13 +21,15 @@ func (app *workbench) openSettings() {
 		app.fontFamilies = ui.FontFamilies()
 	}
 	win := mygo.NewWindow(mygo.WindowOptions{
-		Title:         app.localized("设置"),
-		Width:         520,
-		Height:        620,
-		MinWidth:      480,
-		MinHeight:     460,
-		Parent:        app.window,
-		StateKey:      "dbl-settings",
+		Title:     app.localized("设置"),
+		Width:     520,
+		Height:    500,
+		MinWidth:  480,
+		MinHeight: 420,
+		Parent:    app.window,
+		// Reset the old oversized settings-window frame once; subsequent
+		// user resizing is remembered under this key.
+		StateKey:      "dbl-settings-v2",
 		TitleBarStyle: mygo.TitleBarHiddenInset,
 		Content:       ui.View(app.settingsView),
 	})
@@ -56,14 +58,16 @@ func (app *workbench) invalidateSettingsWindow() {
 }
 
 func (app *workbench) settingsView(c *ui.Context) {
+	if c.Shortcut(0, ui.KeyEscape) || c.Shortcut(ui.Cmd, ui.KeyW) {
+		if app.settingsWindow != nil {
+			app.settingsWindow.Close()
+		}
+	}
 	defaultFontSize := c.Theme().FontSize
 	app.applyInterfaceTheme(c)
 	bar := c.TitleBar()
 	ui.Column(c).Fill().Children(func() {
-		ui.Row(c).FillWidth().Height(max(bar.Height, c.Theme().FontSize+18)).Padding(0, bar.Right+12, 0, bar.Left+12).AlignItems(ui.Center).DragWindow().Children(func() {
-			ui.Text(c, app.localized("设置")).Bold().SingleLine()
-		})
-		ui.Row(c).FillWidth().Padding(4, 14).Gap(6).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).FillWidth().Height(max(bar.Height, c.Theme().FontSize+18)).Padding(0, bar.Right+12, 0, bar.Left+12).Gap(8).AlignItems(ui.Center).DragWindow().Children(func() {
 			for _, tab := range [...]struct{ id, label, icon string }{
 				{"general", "常规", "settings"},
 				{"interface", "界面", "win-maximize"},
@@ -71,7 +75,7 @@ func (app *workbench) settingsView(c *ui.Context) {
 				{"ai", "AI 助手", "sparkle"},
 			} {
 				button := iconButton(c, app.localized(tab.label), actionIcons[tab.icon]).
-					Size(36, 32).Padding(7).Role(ui.RoleTab).Selected(app.settingsTab == tab.id).Shrink(0)
+					Size(34, 30).Padding(6).Role(ui.RoleTab).Selected(app.settingsTab == tab.id).Shrink(0)
 				if button.Clicked() {
 					app.settingsTab = tab.id
 				}

@@ -88,6 +88,13 @@ type TableEditor interface {
 	ApplyTableChanges(context.Context, Object, []string, []TableChange) error
 }
 
+// TableImporter inserts a reviewed file-import batch into one SQL table in a
+// single transaction. It is separate from TableEditor because imports have a
+// larger row limit than interactive edits.
+type TableImporter interface {
+	ImportTableRows(context.Context, Object, []TableChange) error
+}
+
 // SchemaEditor applies a reviewed set of table DDL statements. Implementations
 // should use a transaction when their database supports transactional DDL.
 type SchemaEditor interface {
@@ -108,7 +115,11 @@ type TableChange struct {
 	Values   map[string]any
 }
 
-const MaxTableChangeBatch = 500
+const (
+	MaxTableChangeBatch   = 500
+	MaxTableImportRows    = 10000
+	MaxTableImportColumns = 256
+)
 
 // CurrentDatabase is an optional SQL capability for adapters that can report
 // the server-side database selected by a connection.

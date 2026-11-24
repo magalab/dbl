@@ -433,6 +433,11 @@ type workbench struct {
 	dialogOpen                    bool
 	confirmationOpen              bool
 	confirmation                  *appConfirmation
+	sqlDatabaseCreateOpen         bool
+	sqlDatabaseCreateName         string
+	sqlDatabaseCreateConnectionID string
+	sqlDatabaseCreateDriver       connection.Driver
+	sqlImportWizard               *sqlImportWizardState
 	busy                          bool
 	cancelQuery                   context.CancelFunc
 	cancelRedis                   context.CancelFunc
@@ -542,6 +547,7 @@ type queryWorkspace struct {
 	redisEntryFilter            string
 	dataView                    bool
 	schemaView                  bool
+	schemaCreateTable           bool
 	schemaObject                connection.Object
 	schemaConnectionID          string
 	schemaLoading               bool
@@ -621,16 +627,17 @@ type appConfirmation struct {
 }
 
 type schemaColumnDraft struct {
-	OriginalName string
-	Name         string
-	Type         string
-	NotNull      bool
-	Default      string
-	DefaultSet   bool
-	PrimaryKey   bool
-	Hidden       bool
-	IsNew        bool
-	Dropped      bool
+	OriginalName  string
+	Name          string
+	Type          string
+	NotNull       bool
+	Default       string
+	DefaultSet    bool
+	PrimaryKey    bool
+	AutoIncrement bool
+	Hidden        bool
+	IsNew         bool
+	Dropped       bool
 }
 
 type dataRowChange struct {

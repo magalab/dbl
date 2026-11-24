@@ -41,6 +41,48 @@ func (store *Store) ApplyTableChanges(ctx context.Context, object connection.Obj
 	return redactError("commit MySQL table edit", tx.Commit(), store.password())
 }
 
+func (store *Store) ImportTableRows(ctx context.Context, object connection.Object, changes []connection.TableChange) error {
+	if store == nil || store.db == nil {
+		return errors.New("MySQL connection is closed")
+	}
+	if store.readOnly {
+		return errors.New("MySQL connection is read-only")
+	}
+	if object.Type != "table" || object.Schema == "" || object.Name == "" {
+		return errors.New("a MySQL database and base table are required")
+	}
+	if len(changes) == 0 || len(changes) > connection.MaxTableImportRows {
+		return fmt.Errorf("table import must contain 1 to %d rows", connection.MaxTableImportRows)
+	}
+	var transactions string
+	const engineQuery = `
+		SELECT COALESCE(e.transactions, 'NO')
+		FROM information_schema.tables AS t
+		LEFT JOIN information_schema.engines AS e ON e.engine = t.engine
+		WHERE t.table_schema = ? AND t.table_name = ? AND t.table_type = 'BASE TABLE'`
+	if err := store.db.QueryRowContext(ctx, engineQuery, object.Schema, object.Name).Scan(&transactions); err != nil {
+		return redactError("check MySQL import table engine", err, store.password())
+	}
+	if !strings.EqualFold(transactions, "YES") {
+		return errors.New("MySQL table engine does not support transactions; import was not started")
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return redactError("begin MySQL table import", err, store.password())
+	}
+	defer tx.Rollback()
+	table := quoteMySQLTable(object.Schema, object.Name)
+	for _, change := range changes {
+		if change.Kind != connection.InsertRow {
+			return errors.New("table import accepts insert rows only")
+		}
+		if err := applyMySQLChange(ctx, tx, table, nil, change); err != nil {
+			return redactError("import MySQL table rows", err, store.password())
+		}
+	}
+	return redactError("commit MySQL table import", tx.Commit(), store.password())
+}
+
 func (store *Store) ApplySchemaChanges(ctx context.Context, statements []string) error {
 	if store == nil || store.db == nil {
 		return errors.New("MySQL connection is closed")
@@ -175,3 +217,4 @@ func sortedMySQLKeys(values map[string]any) []string {
 }
 
 var _ connection.TableEditor = (*Store)(nil)
+var _ connection.TableImporter = (*Store)(nil)

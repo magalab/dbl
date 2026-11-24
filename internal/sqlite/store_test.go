@@ -278,22 +278,22 @@ func TestObjectsColumnsAndStreamingExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Objects) != 1 || page.Objects[0].Type != "index" || !page.HasMore {
-		t.Fatalf("first object page = %#v, want one index and another page", page)
-	}
-	page, err = store.Objects(ctx, page.NextSchema, page.NextType, page.NextName, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if len(page.Objects) != 1 || page.Objects[0].Name != `odd"table` || page.Objects[0].Type != "table" || !page.HasMore {
-		t.Fatalf("second object page = %#v, want the quoted table and another page", page)
+		t.Fatalf("first object page = %#v, want the first table and another page", page)
 	}
 	page, err = store.Objects(ctx, page.NextSchema, page.NextType, page.NextName, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Objects) != 1 || page.Objects[0].Name != "sqliteX_records" || page.HasMore {
-		t.Fatalf("third object page = %#v, want the sqliteX user table", page)
+	if len(page.Objects) != 1 || page.Objects[0].Name != "sqliteX_records" || page.Objects[0].Type != "table" || !page.HasMore {
+		t.Fatalf("second object page = %#v, want the second table and another page", page)
+	}
+	page, err = store.Objects(ctx, page.NextSchema, page.NextType, page.NextName, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Objects) != 1 || page.Objects[0].Name != "records_payload_idx" || page.Objects[0].Type != "index" || page.Objects[0].TableName != `odd"table` || page.HasMore {
+		t.Fatalf("third object page = %#v, want the user index", page)
 	}
 	columns, err := store.Columns(ctx, "", `odd"table`)
 	if err != nil {

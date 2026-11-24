@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.7] - 2026-11-24
+
+- Add saved SQL queries for SQLite, per-workspace SQL drafts, and user / role management for MySQL and PostgreSQL.
+- Add visual table creation and structure editing, plus CSV, TSV, delimited-text, and JSON import with field mapping and preview.
+- Add table data export to CSV, JSON, and SQL INSERT, and database / schema SQL exports for structure-only or full backups.
+- Improve SQLite object browsing, SQL workspace navigation, and the settings window layout and keyboard dismissal.
+- Fix PostgreSQL catalog compatibility and harden SQL backup ordering, generated-column handling, sequence state, and transactional imports.
+
 ## [0.1.6] - 2026-11-20
 
 - Add Redis instance metrics and an etcd cluster dashboard with lease management and key-binding workflows.

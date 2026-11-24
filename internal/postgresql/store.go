@@ -321,7 +321,13 @@ func (store *Store) Objects(ctx context.Context, afterSchema, afterType, afterNa
 			       'type'::text AS object_type, ''::text AS definition, ''::text AS table_name
 			FROM pg_catalog.pg_type AS t
 			JOIN pg_catalog.pg_namespace AS n ON n.oid = t.typnamespace
-			WHERE t.typtype IN ('d', 'e', 'r', 'm') AND t.typisdefined
+			WHERE t.typisdefined AND (
+			  t.typtype IN ('d', 'e', 'r', 'm') OR
+			  (t.typtype = 'c' AND EXISTS (
+			      SELECT 1 FROM pg_catalog.pg_class AS composite_type
+			      WHERE composite_type.oid = t.typrelid AND composite_type.relkind = 'c'
+			  ))
+			)
 			  AND t.typname NOT LIKE '\_%' ESCAPE '\'
 			  AND n.nspname <> 'information_schema' AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
 			UNION ALL
@@ -404,7 +410,8 @@ func (store *Store) Columns(ctx context.Context, schema, table string) ([]connec
 		           SELECT 1 FROM pg_catalog.pg_index AS i
 		           WHERE i.indrelid = c.oid AND i.indisprimary AND a.attnum = ANY(i.indkey)
 		       ),
-		       (a.attgenerated <> '' OR a.attidentity <> ''),
+		       a.attgenerated,
+		       a.attidentity,
 		       pg_catalog.pg_get_expr(d.adbin, d.adrelid)
 		FROM pg_catalog.pg_attribute AS a
 		JOIN pg_catalog.pg_class AS c ON c.oid = a.attrelid
@@ -421,14 +428,19 @@ func (store *Store) Columns(ctx context.Context, schema, table string) ([]connec
 	for rows.Next() {
 		var (
 			column    connection.Column
-			generated bool
+			generated string
+			identity  string
 			def       sql.NullString
 		)
-		if err := rows.Scan(&column.Position, &column.Name, &column.Type, &column.NotNull, &column.PrimaryKey, &generated, &def); err != nil {
+		if err := rows.Scan(&column.Position, &column.Name, &column.Type, &column.NotNull, &column.PrimaryKey, &generated, &identity, &def); err != nil {
 			return nil, redactError("read PostgreSQL column metadata", err, store.config.Password)
 		}
-		if generated {
+		if generated != "" {
 			column.Hidden = 1
+			column.Extra = "generated"
+		} else if identity != "" {
+			column.Hidden = 1
+			column.Extra = "identity " + map[string]string{"a": "always", "d": "by default"}[identity]
 		}
 		if def.Valid {
 			column.Default = def.String

@@ -53,6 +53,44 @@ func (store *Store) ApplyTableChanges(ctx context.Context, object connection.Obj
 	return redactError("commit PostgreSQL table edit", tx.Commit(), store.config.Password)
 }
 
+func (store *Store) ImportTableRows(ctx context.Context, object connection.Object, changes []connection.TableChange) error {
+	if store == nil || store.db == nil {
+		return errors.New("PostgreSQL connection is closed")
+	}
+	if store.readOnly {
+		return errors.New("PostgreSQL connection is read-only")
+	}
+	if object.Type != "table" || object.Schema == "" || object.Name == "" {
+		return errors.New("a PostgreSQL schema and base table are required")
+	}
+	if len(changes) == 0 || len(changes) > connection.MaxTableImportRows {
+		return fmt.Errorf("table import must contain 1 to %d rows", connection.MaxTableImportRows)
+	}
+	columns, err := store.Columns(ctx, object.Schema, object.Name)
+	if err != nil {
+		return err
+	}
+	types := make(map[string]string, len(columns))
+	for _, column := range columns {
+		types[column.Name] = column.Type
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return redactError("begin PostgreSQL table import", err, store.config.Password)
+	}
+	defer tx.Rollback()
+	table := quoteTable(object.Schema, object.Name)
+	for _, change := range changes {
+		if change.Kind != connection.InsertRow {
+			return errors.New("table import accepts insert rows only")
+		}
+		if err := applyPostgreSQLChange(ctx, tx, table, nil, types, change); err != nil {
+			return redactError("import PostgreSQL table rows", err, store.config.Password)
+		}
+	}
+	return redactError("commit PostgreSQL table import", tx.Commit(), store.config.Password)
+}
+
 func (store *Store) ApplySchemaChanges(ctx context.Context, statements []string) error {
 	if store == nil || store.db == nil {
 		return errors.New("PostgreSQL connection is closed")
@@ -239,3 +277,4 @@ func sortedKeys(values map[string]any) []string {
 }
 
 var _ connection.TableEditor = (*Store)(nil)
+var _ connection.TableImporter = (*Store)(nil)

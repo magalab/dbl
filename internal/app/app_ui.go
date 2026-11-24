@@ -138,6 +138,8 @@ func (app *workbench) view(c *ui.Context) {
 	app.savedQueryEditorModal(c)
 	app.etcdCreateKeyModal(c)
 	app.etcdGrantLeaseModal(c)
+	app.sqlDatabaseCreateModal(c)
+	app.sqlImportWizardModal(c)
 	app.confirmationModal(c)
 }
 

@@ -65,7 +65,9 @@ func (app *workbench) connectionTree(c *ui.Context) {
 		label := app.activeConnectionTreeLabel()
 		if filter == "" || strings.Contains(strings.ToLower(label), filter) {
 			open := app.connectionTreeState("current", true)
-			item := ui.TreeItem(c, label, open, func() { app.connectionTreeResources(c, 0) })
+			item := ui.TreeItem(c, label, open, func() { app.connectionTreeResources(c, 0) }).ContextMenu(func(menu *ui.Menu) {
+				app.activeConnectionRootContextMenu(menu)
+			})
 			item = connectionTreeDecorations(c, item, string(app.openedDriver), "", 0, false, true)
 			item.Clicked()
 		}
@@ -223,7 +225,7 @@ func (app *workbench) profileSQLNamespaces(c *ui.Context, profile preferences.Co
 				app.sqlObjectTreeItem(c, id, object, depth+1)
 			}
 		}).ContextMenu(func(menu *ui.Menu) {
-			app.schemaContextMenu(menu, namespace)
+			app.schemaContextMenu(menu, id, connection.Driver(profile.Driver), namespace)
 		})
 		item = connectionTreeDecorations(c, item, "", "schema", depth, false, false)
 		if item.Clicked() {

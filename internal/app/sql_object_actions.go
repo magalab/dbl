@@ -11,20 +11,108 @@ import (
 	"github.com/magalab/dbl/internal/connection"
 )
 
-func (app *workbench) schemaContextMenu(menu *ui.Menu, schema string) {
-	if menu.Item("＋  " + app.localized("新建查询")).Disabled(app.busy || app.exporting || app.dialogOpen).Chosen() {
-		app.openSQLQuery("")
+func (app *workbench) schemaContextMenu(menu *ui.Menu, connectionID string, driver connection.Driver, schema string) {
+	activate := func() bool {
+		return connectionID == app.openedConnectionID || app.activateLiveConnectionForWorkspace(connectionID)
 	}
-	if menu.Item("▤  " + app.localized("切换到此数据库 / Schema")).Disabled(app.busy || app.exporting || app.dialogOpen || schema == app.sqlNamespace).Chosen() {
-		app.switchSQLNamespace(schema)
+	store, readOnly := app.sqlConnectionForID(connectionID)
+	canUseWorkspace := store != nil && !app.busy && !app.exporting && !app.dialogOpen
+	canAddWorkspace := canUseWorkspace && (!app.queryWorkspaceRequested || app.workspaceCount() < maxWorkspaces)
+	if menu.Item("＋  " + app.localized("新建表…")).Disabled(!canAddWorkspace || driver != connection.DriverSQLite && driver != connection.DriverMySQL && driver != connection.DriverPostgreSQL || readOnly).Chosen() {
+		if activate() {
+			app.openNewTableStructureEditor(schema)
+		}
 	}
-	if menu.Item("↻  " + app.localized("刷新")).Disabled(app.busy || app.exporting || app.dialogOpen).Chosen() {
-		if schema != app.sqlNamespace {
-			app.switchSQLNamespace(schema)
-		} else {
+	if menu.Item("▤  " + app.localized("新建查询")).Disabled(!canAddWorkspace).Chosen() {
+		if activate() {
+			app.openObjectSQLQuery(connection.Object{Schema: schema}, "")
+		}
+	}
+	menu.Separator()
+	exportLabel := "导出 Schema"
+	if driver == connection.DriverMySQL || driver == connection.DriverSQLite {
+		exportLabel = "导出数据库"
+	}
+	menu.Submenu("⇩  "+app.localized(exportLabel), func(submenu *ui.Menu) {
+		addSQLDatabaseExportOptionsForConnection(app, submenu, connectionID, schema)
+	})
+	if menu.Item("⇧  " + app.localized("导入数据…")).Disabled(!canUseWorkspace || readOnly || app.tableImporterForSQLConnection(connectionID) == nil).Chosen() {
+		if activate() {
+			app.importCSVIntoNamespace(connectionID, driver, schema)
+		}
+	}
+	menu.Separator()
+	if menu.Item("↻  " + app.localized("刷新")).Disabled(!canUseWorkspace).Chosen() {
+		if activate() {
 			app.refreshCurrentConnection()
 		}
 	}
+}
+
+func addSQLDatabaseExportOptions(app *workbench, menu *ui.Menu, scope string) {
+	for _, option := range []struct {
+		label       string
+		includeData bool
+	}{{"仅结构 SQL…", false}, {"结构和数据 SQL…", true}} {
+		option := option
+		if menu.Item(app.localized(option.label)).Disabled(app.busy || app.exporting || app.dialogOpen || app.store == nil).Chosen() {
+			app.exportSQLDatabase(scope, option.includeData)
+		}
+	}
+}
+
+func addSQLDatabaseExportOptionsForConnection(app *workbench, menu *ui.Menu, connectionID, scope string) {
+	store, _ := app.sqlConnectionForID(connectionID)
+	for _, option := range []struct {
+		label       string
+		includeData bool
+	}{{"仅结构 SQL…", false}, {"结构和数据 SQL…", true}} {
+		option := option
+		if menu.Item(app.localized(option.label)).Disabled(app.busy || app.exporting || app.dialogOpen || store == nil).Chosen() {
+			if connectionID != app.openedConnectionID && !app.activateLiveConnectionForWorkspace(connectionID) {
+				return
+			}
+			app.exportSQLDatabase(scope, option.includeData)
+		}
+	}
+}
+
+func (app *workbench) sqlConnectionForID(connectionID string) (connection.SQL, bool) {
+	if connectionID == "" || connectionID == app.openedConnectionID {
+		return app.store, app.openedReadOnly
+	}
+	live, ok := app.liveConnections[connectionID]
+	if !ok || live.connection == nil {
+		return nil, true
+	}
+	store, _ := live.connection.(connection.SQL)
+	return store, live.profile.ReadOnly
+}
+
+func (app *workbench) tableImporterForSQLConnection(connectionID string) connection.TableImporter {
+	if connectionID == "" || connectionID == app.openedConnectionID {
+		importer, _ := app.store.(connection.TableImporter)
+		if app.openedReadOnly {
+			return nil
+		}
+		return importer
+	}
+	live, ok := app.liveConnections[connectionID]
+	if !ok || live.connection == nil || live.profile.ReadOnly {
+		return nil
+	}
+	importer, _ := live.connection.(connection.TableImporter)
+	return importer
+}
+
+func (app *workbench) sqlObjectsForConnection(connectionID string) []connection.Object {
+	var objects []connection.Object
+	if connectionID == "" || connectionID == app.openedConnectionID {
+		objects = app.objects
+	} else if live, ok := app.liveConnections[connectionID]; ok {
+		objects = live.tree.objects
+	}
+	return append([]connection.Object(nil), objects...)
 }
 
 func (app *workbench) sqlObjectContextMenu(menu *ui.Menu, object connection.Object) {
@@ -84,6 +172,28 @@ func (app *workbench) sqlObjectContextMenuForConnection(menu *ui.Menu, connectio
 	if menu.Item("✎  " + app.localized("查看结构")).Disabled(app.busy || app.exporting || app.dialogOpen).Chosen() {
 		if activate() {
 			app.inspectObject(object)
+		}
+	}
+	if object.Type == "table" {
+		menu.Separator()
+		menu.Submenu("⇩  "+app.localized("导出数据"), func(submenu *ui.Menu) {
+			for _, item := range []struct {
+				label  string
+				format objectExportFormat
+			}{{"导出为 CSV…", objectExportCSV}, {"导出为 JSON…", objectExportJSON}, {"导出为 SQL INSERT…", objectExportSQL}} {
+				item := item
+				if submenu.Item(app.localized(item.label)).Disabled(app.busy || app.exporting || app.dialogOpen).Chosen() {
+					if activate() {
+						app.exportSQLObject(object, item.format)
+					}
+				}
+			}
+		})
+		_, readOnly := app.sqlConnectionForID(connectionID)
+		if menu.Item("⇧  " + app.localized("导入数据…")).Disabled(app.busy || app.exporting || app.dialogOpen || readOnly || app.tableImporterForSQLConnection(connectionID) == nil).Chosen() {
+			if activate() {
+				app.importCSVIntoTable(object)
+			}
 		}
 	}
 	driver := sqlObjectDriverForConnection(app, connectionID)
@@ -246,8 +356,20 @@ func quoteSQLLiteral(value string) string {
 }
 
 func postgresTableDDLQuery(object connection.Object) string {
+	return postgresTableDDLQueryWithForeignKeys(object, true)
+}
+
+func postgresTableDumpDDLQuery(object connection.Object) string {
+	return postgresTableDDLQueryWithForeignKeys(object, false)
+}
+
+func postgresTableDDLQueryWithForeignKeys(object connection.Object, includeForeignKeys bool) string {
 	schema := quoteSQLLiteral(object.Schema)
 	name := quoteSQLLiteral(object.Name)
+	foreignKeyFilter := ""
+	if !includeForeignKeys {
+		foreignKeyFilter = " AND con.contype <> 'f'"
+	}
 	return `WITH target AS (
     SELECT c.oid, c.relkind, n.nspname, c.relname
     FROM pg_class AS c
@@ -277,7 +399,7 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
     SELECT string_agg('    ' || pg_get_constraintdef(con.oid, true), E',\n' ORDER BY con.conname) AS definitions
     FROM pg_constraint AS con
-    WHERE con.conrelid = t.oid
+    WHERE con.conrelid = t.oid` + foreignKeyFilter + `
 ) AS constraints ON true;
 `
 }

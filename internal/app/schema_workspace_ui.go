@@ -32,6 +32,7 @@ func (app *workbench) openTableStructureEditor(object connection.Object) {
 	workspace.title = "结构 · " + object.Name
 	app.selectedObject, app.selectedType, app.selectedSQL = object.Name, object.Type, object.SQL
 	workspace.schemaView = true
+	workspace.schemaCreateTable = false
 	workspace.schemaObject = object
 	workspace.schemaConnectionID = app.openedConnectionID
 	workspace.schemaLoading = false
@@ -49,6 +50,51 @@ func (app *workbench) openTableStructureEditor(object connection.Object) {
 	if app.activeQuery == workspace {
 		app.loadSchemaWorkspaceColumns(workspace)
 	}
+}
+
+func (app *workbench) openNewTableStructureEditor(schema string) {
+	if app.store == nil || app.busy || app.exporting || app.dialogOpen || app.openedReadOnly {
+		return
+	}
+	if app.queryWorkspaceRequested && app.workspaceCount() >= maxWorkspaces {
+		return
+	}
+	var workspace *queryWorkspace
+	if !app.queryWorkspaceRequested {
+		app.queryWorkspaceRequested = true
+		workspace = app.workspaces[app.activeWorkspace]
+		workspace.implicitQuery = false
+	} else {
+		workspace = newQueryWorkspace(app.nextWorkspaceID)
+		app.nextWorkspaceID++
+		app.workspaces = append(app.workspaces, workspace)
+		app.activateWorkspace(len(app.workspaces) - 1)
+	}
+	name := "new_table"
+	workspace.title = "新建表 · " + name
+	workspace.schemaView = true
+	workspace.schemaCreateTable = true
+	workspace.schemaObject = connection.Object{Schema: schema, Name: name, Type: "table"}
+	workspace.schemaConnectionID = app.openedConnectionID
+	workspace.schemaLoading = false
+	workspace.schemaLoaded = true
+	workspace.schemaLoadError = ""
+	workspace.schemaError = ""
+	workspace.schemaBaseline = nil
+	keyType := "BIGINT"
+	if app.openedDriver == connection.DriverSQLite {
+		keyType = "INTEGER"
+	}
+	workspace.schemaColumns = []schemaColumnDraft{
+		{Name: "id", Type: keyType, PrimaryKey: true, AutoIncrement: true, IsNew: true},
+		{Name: "name", Type: "TEXT", IsNew: true},
+	}
+	workspace.schemaPreviewTab = false
+	workspace.schemaApplyPending = false
+	workspace.schemaCloseAfterApply = false
+	workspace.columns = nil
+	workspace.resultSQL = ""
+	app.errorSummary, app.errorDetails, app.showErrorDetails = "", "", false
 }
 
 func (app *workbench) loadSchemaWorkspaceColumns(workspace *queryWorkspace) {
@@ -103,20 +149,34 @@ func (app *workbench) schemaWorkspace(c *ui.Context, workspace *queryWorkspace) 
 		if icon := treeItemIcons["table"]; icon != nil {
 			ui.Icon(c, icon).Size(18, 18)
 		}
-		ui.Text(c, app.localized("表结构")).Bold().Role(ui.RoleHeading).Level(1)
+		heading := "表结构"
+		if workspace.schemaCreateTable {
+			heading = "新建表"
+		}
+		ui.Text(c, app.localized(heading)).Bold().Role(ui.RoleHeading).Level(1)
 		breadcrumb := app.schemaConnectionLabel(workspace) + " / " + object.Name
 		if object.Schema != "" {
-			breadcrumb = app.schemaConnectionLabel(workspace) + " / " + object.Schema + " / " + object.Name
+			breadcrumb = app.schemaConnectionLabel(workspace) + " / " + object.Schema
+			if !workspace.schemaCreateTable {
+				breadcrumb += " / " + object.Name
+			}
 		}
-		ui.Text(c, breadcrumb).TextColor(c.Theme().TextMuted).SingleLine()
+		if workspace.schemaCreateTable {
+			ui.Text(c, breadcrumb).TextColor(c.Theme().TextMuted).SingleLine()
+			ui.TextInput(c, &workspace.schemaObject.Name).Placeholder(app.localized("表名")).Label(app.localized("表名")).Width(220)
+		} else {
+			ui.Text(c, breadcrumb).TextColor(c.Theme().TextMuted).SingleLine()
+		}
 		ui.Spacer(c)
-		refresh := ui.Button(c, app.localized("刷新结构"))
-		refresh.Disabled(app.busy || app.exporting || app.dialogOpen || workspace.schemaConnectionID != app.openedConnectionID)
-		if refresh.Clicked() {
-			if schemaWorkspaceDirty(workspace) {
-				app.confirmReloadSchemaWorkspace(workspace)
-			} else {
-				app.reloadSchemaWorkspace(workspace)
+		if !workspace.schemaCreateTable {
+			refresh := ui.Button(c, app.localized("刷新结构"))
+			refresh.Disabled(app.busy || app.exporting || app.dialogOpen || workspace.schemaConnectionID != app.openedConnectionID)
+			if refresh.Clicked() {
+				if schemaWorkspaceDirty(workspace) {
+					app.confirmReloadSchemaWorkspace(workspace)
+				} else {
+					app.reloadSchemaWorkspace(workspace)
+				}
 			}
 		}
 	})
@@ -179,7 +239,11 @@ func (app *workbench) schemaWorkspace(c *ui.Context, workspace *queryWorkspace) 
 func (app *workbench) schemaFieldGrid(c *ui.Context, workspace *queryWorkspace) {
 	driver := app.openedDriver
 	ui.Column(c).Fill().Padding(12).Gap(8).Children(func() {
-		ui.Text(c, app.localized("字段变更会先生成 SQL 预览；执行前还会显示目标连接和完整语句供确认。主键定义保留现状。 ")).TextColor(c.Theme().TextMuted)
+		help := "字段变更会先生成 SQL 预览；执行前还会显示目标连接和完整语句供确认。主键定义保留现状。 "
+		if workspace.schemaCreateTable {
+			help = "设置字段、主键和自增方式；执行前可在 SQL 预览中检查建表语句。"
+		}
+		ui.Text(c, app.localized(help)).TextColor(c.Theme().TextMuted)
 		if driver == connection.DriverMySQL {
 			ui.Text(c, app.localized("MySQL 会逐条执行 DDL，若中途失败，先刷新结构再继续。 ")).TextColor(c.Theme().Warning)
 		}
@@ -217,14 +281,33 @@ func (app *workbench) schemaFieldGrid(c *ui.Context, workspace *queryWorkspace) 
 							defaultInput.Disabled(app.busy || app.dialogOpen || app.openedReadOnly || workspace.schemaConnectionID != app.openedConnectionID || column.Hidden || column.Dropped || !column.DefaultSet || (!column.IsNew && driver == connection.DriverSQLite))
 						})
 						defaultRow.Grow(1)
-						constraint := ""
-						if column.PrimaryKey {
-							constraint = app.localized("主键")
+						if workspace.schemaCreateTable && column.IsNew {
+							ui.Column(c).Width(110).Gap(2).Children(func() {
+								primary := ui.Checkbox(c, &column.PrimaryKey, app.localized("主键"))
+								primary.Disabled(app.busy || app.dialogOpen || app.openedReadOnly || workspace.schemaConnectionID != app.openedConnectionID)
+								if primary.Clicked() && !column.PrimaryKey {
+									column.AutoIncrement = false
+								}
+								increment := ui.Checkbox(c, &column.AutoIncrement, app.localized("自增"))
+								increment.Disabled(app.busy || app.dialogOpen || app.openedReadOnly || workspace.schemaConnectionID != app.openedConnectionID || !column.PrimaryKey || !column.AutoIncrement && (!autoIncrementTypeSupported(driver, column.Type) || column.DefaultSet))
+								if increment.Clicked() && column.AutoIncrement {
+									for otherIndex := range workspace.schemaColumns {
+										if otherIndex != index {
+											workspace.schemaColumns[otherIndex].AutoIncrement = false
+										}
+									}
+								}
+							})
+						} else {
+							constraint := ""
+							if column.PrimaryKey {
+								constraint = app.localized("主键")
+							}
+							if column.Hidden {
+								constraint = app.localized("生成 / 自增")
+							}
+							ui.Text(c, constraint).TextColor(c.Theme().TextMuted).Width(110).SingleLine()
 						}
-						if column.Hidden {
-							constraint = app.localized("生成 / 自增")
-						}
-						ui.Text(c, constraint).TextColor(c.Theme().TextMuted).Width(110).SingleLine()
 						removeLabel := app.localized("删除字段")
 						if column.Dropped {
 							removeLabel = app.localized("撤销删除")
